@@ -85,11 +85,9 @@ button svg {
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 35px;
-  height: 35px;
-  background: var(--teal);
-  color: white;
-  border-radius: 11px 15px 15px 11px;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
 }
 .project-name {
   display: flex;

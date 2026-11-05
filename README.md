@@ -1,12 +1,49 @@
-# CutHelper
+<p align="center">
+  <img src="public/icon.png" alt="CutHelper 图标" width="112" height="112" />
+</p>
 
-完全离线的口播自动粗剪桌面应用。导入一个视频，检测长停顿，逐段保留或删除，再导出成片或剪辑时间线。素材与分析过程不会上传。
+<h1 align="center">CutHelper</h1>
+
+<p align="center">剪掉冗长停顿，保留你的表达节奏。</p>
+<p align="center">离线口播自动粗剪 · macOS / Windows · 无账号 · 素材不上传</p>
+
+CutHelper 是一个桌面端剪辑辅助工具，适合课程、访谈、自媒体口播。导入一段视频，自动找出长停顿，检查保留或删除，再导出粗剪视频或可继续编辑的时间线。
+
+## 应用界面
+
+![CutHelper 桌面工作台](docs/images/workspace.png)
+
+*真实桌面应用截图：静音片段检查、视频预览、参数调整、波形时间线和多格式导出。画面中的视频为自动生成的测试素材。*
+
+<details>
+<summary>查看导入界面</summary>
+
+![CutHelper 导入界面](docs/images/import.png)
+
+</details>
+
+## 主要功能
+
+- **自动粗剪**：根据音量和停顿时长检测静音，为语音两侧保留可调保护区。
+- **检查与恢复**：片段列表、波形和播放位置联动，逐段保留或删除。
+- **真实预览**：切换原片与粗剪；人工修改后重新生成预览，避免播放旧结果。
+- **五种导出**：MP4、Premiere XML、达芬奇 XML、Final Cut Pro FCPXML、剪映分段素材包。
+- **本地项目**：保存参数和人工选择，素材移动后可重新定位。
+- **常见素材处理**：保留 29.97 fps 等有理数帧率，处理可变帧率和手机旋转信息。
+
+## 获取桌面版
+
+当前为 **v0.1.1 本地验证版**。源码与构建配置已提供；本次 GitHub 推送不包含安装包，尚未发布 GitHub Release。
+
+在项目目录运行 `npm run dist:mac` 或 `npm run dist:win` 可生成安装包。Mac 包为未签名本地构建；Windows 和专业剪辑软件实际导入兼容性仍待对应环境验证。
 
 ## 开发与运行
 
 使用 Node.js 22 LTS 和 npm：
 
 ```sh
+git clone https://github.com/misanyrock/cutHelper.git
+cd cutHelper
 npm ci
 npm run dev
 ```
@@ -47,6 +84,10 @@ npm run dist:win         # 在 Windows 上生成 NSIS 安装包
 
 可变帧率素材先生成 30 fps 恒定帧率工作副本，界面会提示；视频、预览和时间线共用工作副本。导出时间线时将完整工作副本复制到旁边的 `*-媒体` 目录，一起保留该目录。携带旋转信息的手机视频会先转换为正确方向的工作副本。恒定帧率素材保留源有理数帧率，例如 30000/1001。项目与编码区间内部以整数微秒表达，最终统一对齐视频帧。
 
+## v0.1.1 修复
+
+修复部分素材点击粗剪预览时报 `media.fpsNum` 超过 100 万的问题。帧率是分数，较大的分子、分母依然可能表示正常帧率；现在保留 FFmpeg 支持的合法有理数，读取时只做无损约分，并在平均帧率无效时回退到有效的轨道帧率。回归测试包含大分子/分母素材的真实预览编码。
+
 ## 首版边界
 
 - 一次一个 SDR 视频，使用首个非封面视频轨与首个音轨，输出最多双声道。字幕、多机位、多音轨混音、特效和转场不在首版中。
@@ -55,10 +96,36 @@ npm run dist:win         # 在 Windows 上生成 NSIS 安装包
 - 应用数据在 Electron 的用户数据目录 `CutHelper/media`（开发模式可能为 `cuthelper/media`）。包含恒定帧率副本与临时预览；正常退出会清理本次预览。保存的项目可能引用工作副本，不应在使用项目期间删除整个数据目录。
 - 首版为未签名本地构建，没有公开发布或自动更新。Windows、Premiere、Resolve、Final Cut Pro 的实际导入测试须在具备对应系统及软件的环境完成；结构测试不等同于软件导入兼容认证。
 
+## 图标与品牌资源
+
+新图标以青绿色圆角方形为底，将播放符号和剪切断口组合在一起。页头、Dock、窗口和安装包共用这一标识。
+
+- `public/icon.svg`：可编辑的矢量源文件，同时用于界面和 favicon。
+- `public/icon.png`：1024 × 1024 透明背景 PNG。
+- `build/icon.icns` / `build/icon.ico`：Mac / Windows 安装包图标。
+
+修改 SVG 后，使用已安装的 Google Chrome 运行 `npm run icons`，生成各平台资源。生成结果随源码提交，日常构建和 CI 不需要安装 Chrome。
+
+## 验证与当前状态
+
+| 检查 | 状态 |
+| --- | --- |
+| TypeScript 与生产构建 | 通过 |
+| 剪辑模型、XML 与真实 FFmpeg 测试 | 14 项通过 |
+| macOS 打包应用完整工作流 | 已验证导入、分析、恢复、播放、项目保存、五种导出和素材重定位 |
+| 桌面和窄屏界面 | 已检查；桌面 1536 × 1024、窄屏 390 × 844 |
+| Windows 运行 / 专业编辑器内导入 | 待对应环境验证 |
+
+`.github/workflows/build.yml` 提供手动触发的 Mac / Windows 构建工作流，只上传工作流构建产物，不会自动发布 Release。
+
+## 仓库规则
+
+`.gitignore` 排除依赖、编译结果、安装包、用户视频、项目文件、缓存、测试报告和本地凭据。文档截图、图标及必要设计参考保留在仓库中。请勿提交个人素材或 API 密钥。
+
 ## 代码结构
 
 `electron/`：受限 IPC、媒体子进程、项目文件、XML 导出。`shared/`：项目校验、帧与时间换算、剪辑模型。`src/`：React 工作台及波形、参数、片段组件。`tests/`：纯逻辑及真实媒体测试。设计基准见 `docs/design/workspace.png` 和 `docs/design/spec.md`。
 
 IPC 仅提供导入、分析、预览、保存、打开、导出、取消与任务进度；渲染进程无 Node.js 权限。播放 URL 使用内部令牌映射，不提供任意文件 URL。FFmpeg 以参数数组执行，无 shell 拼接。导出临时文件位于目标目录，成功后重命名完成写入。
 
-应用源码为 MIT；媒体二进制及其他第三方许可见 [第三方说明](docs/THIRD_PARTY.md)。
+应用源码遵循 [Apache-2.0](LICENSE)；媒体二进制及其他第三方许可见 [第三方说明](docs/THIRD_PARTY.md)。

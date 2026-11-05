@@ -137,7 +137,10 @@ app.whenReady().then(async () => {
       return new Response("Not found", { status: 404 });
     return net.fetch(pathToFileURL(file).href, { headers: request.headers });
   });
+  const applicationIcon = path.join(here, "../../dist/icon.png");
+  if (process.platform === "darwin") app.dock?.setIcon(applicationIcon);
   win = new BrowserWindow({
+    icon: applicationIcon,
     width: 1536,
     height: 1024,
     minWidth: 1000,

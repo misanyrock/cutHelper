@@ -1,12 +1,43 @@
+# Dependencies, generated application code and distributables
 node_modules/
-dist/
-dist-electron/
-release/
-media-resources/
-.cache/
+/dist/
+/dist-electron/
+/release/
+/media-resources/
+/.cache/
+/coverage/
+/playwright-report/
+/test-results/
+*.tsbuildinfo
+
+# Private configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+
+# User projects and media (documentation screenshots stay tracked)
 *.cuthelper.json
 *.mp4
 *.mov
 *.mkv
+*.partial
+/.cuthelper-*
+/ChatGPT 图像 *.png
+
+# OS, editor and temporary files
 .DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
 *.log
+*.tmp
+*.swp
+*.swo
+
+# build/icon.icns and build/icon.ico are intentional source assets, not output.

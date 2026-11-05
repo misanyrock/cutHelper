@@ -1,6 +1,6 @@
 # 第三方组件
 
-应用界面与应用逻辑采用 MIT 许可证。第三方组件保留各自许可证。
+应用界面与应用逻辑采用 Apache-2.0 许可证。第三方组件保留各自许可证。
 
 - Electron：MIT，https://github.com/electron/electron
 - React：MIT，https://github.com/facebook/react

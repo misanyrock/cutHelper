@@ -1,10 +1,10 @@
 {
   "name": "cuthelper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "离线口播自动粗剪桌面工具",
   "author": "CutHelper",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "dist-electron/electron/main.js",
   "scripts": {
@@ -14,7 +14,8 @@
     "test:desktop": "node --import tsx scripts/desktop-smoke.ts",
     "pack": "npm run build && node scripts/media-resources.mjs && electron-builder --dir --publish never",
     "dist:mac": "npm run build && node scripts/media-resources.mjs && electron-builder --mac dmg --publish never",
-    "dist:win": "npm run build && node scripts/media-resources.mjs && electron-builder --win nsis --publish never"
+    "dist:win": "npm run build && node scripts/media-resources.mjs && electron-builder --win nsis --publish never",
+    "icons": "node scripts/icons.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",
@@ -59,15 +60,25 @@
     "mac": {
       "category": "public.app-category.video",
       "target": "dmg",
-      "identity": null
+      "identity": null,
+      "icon": "build/icon.icns"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
     "electronDist": "node_modules/electron/dist"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/misanyrock/cutHelper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/misanyrock/cutHelper/issues"
+  },
+  "homepage": "https://github.com/misanyrock/cutHelper#readme"
 }

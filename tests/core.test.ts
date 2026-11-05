@@ -14,6 +14,7 @@ import {
   type Project,
 } from "../shared/model.js";
 import { fcp7, fcpxml } from "../electron/timeline.js";
+import { parseFrameRate, rationalMax } from "../shared/frame-rate.js";
 export const media: Media = {
   path: "/tmp/中文 & 素材.mp4",
   originalPath: "/tmp/中文 & 素材.mp4",
@@ -112,4 +113,51 @@ test("项目结构校验拒绝错误参数和空区间", () => {
       candidates: [{ id: "x", startUs: 3, endUs: 1, remove: true }],
     }).success,
   );
+});
+
+test("帧率分子/分母超过一百万的合法素材可用于预览、保存与导出", () => {
+  const m = { ...media, fpsNum: 51_234_569, fpsDen: 1_707_819 };
+  const p = project(m);
+  assert.ok(projectSchema.safeParse(p).success);
+  assert.deepEqual(projectSchema.parse(JSON.parse(JSON.stringify(p))), p);
+  assert.ok(Number.isFinite(frameUs(m)));
+  assert.equal(frame(1e6, m), 30);
+  assert.match(fcpxml(p), /frameDuration="1707819\/51234569s"/);
+  assert.match(fcp7(p, "premiere"), /<timebase>30<\/timebase>/);
+  for (const [num, den] of [
+    [0, 1],
+    [30, 0],
+    [NaN, 1],
+    [Infinity, 1],
+    [rationalMax + 1, 1],
+    [30, 1.5],
+  ]) {
+    assert.equal(
+      projectSchema.safeParse(project({ ...media, fpsNum: num, fpsDen: den }))
+        .success,
+      false,
+    );
+  }
+});
+
+test("帧率只做无损约分，并拒绝缺失或无效元数据", () => {
+  assert.deepEqual(parseFrameRate("30000000/1001000"), {
+    num: 30000,
+    den: 1001,
+  });
+  assert.deepEqual(parseFrameRate("51234569/1707819"), {
+    num: 51234569,
+    den: 1707819,
+  });
+  for (const value of [
+    undefined,
+    null,
+    "0/0",
+    "30/0",
+    "N/A",
+    "30",
+    "1/2/3",
+    "2147483648/1",
+  ])
+    assert.equal(parseFrameRate(value), null);
 });

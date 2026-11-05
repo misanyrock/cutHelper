@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { mkdir, readFile, writeFile, stat, rm, rename } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { parseFrameRate } from "../shared/frame-rate.js";
 import {
   defaults,
   silenceCandidates,
@@ -128,21 +129,19 @@ export class MediaEngine {
     if (!a) throw new Error("视频没有音轨，无法分析口播停顿");
     if (["smpte2084", "arib-std-b67"].includes(v.color_transfer))
       throw new Error("首版暂不支持 HDR，请先转换为 SDR 视频");
-    const [num, den] = String(
-      v.avg_frame_rate !== "0/0" ? v.avg_frame_rate : v.r_frame_rate,
-    )
-      .split("/")
-      .map(Number);
+    const fps =
+      parseFrameRate(v.avg_frame_rate) ?? parseFrameRate(v.r_frame_rate);
     const d = Number(info.format.duration ?? v.duration);
-    if (!d || !num || !den) throw new Error("视频时长或帧率无效");
+    if (!Number.isFinite(d) || d <= 0 || !fps)
+      throw new Error("视频时长或帧率无效");
     const s = await stat(file);
     return {
       path: file,
       originalPath: file,
       name: path.basename(file),
       durationUs: Math.round(d * 1e6),
-      fpsNum: num,
-      fpsDen: den,
+      fpsNum: fps.num,
+      fpsDen: fps.den,
       width: v.width,
       height: v.height,
       audioChannels: Math.min(2, a.channels),

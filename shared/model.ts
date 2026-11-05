@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { rationalMax } from "./frame-rate.js";
 export const paramsSchema = z.object({
   thresholdDb: z.number().min(-65).max(-15),
   minSilence: z.number().min(0.2).max(3),
@@ -27,8 +28,8 @@ export const mediaSchema = z.object({
   originalPath: z.string(),
   name: z.string(),
   durationUs: z.number().int().positive(),
-  fpsNum: z.number().int().positive().max(1000000),
-  fpsDen: z.number().int().positive().max(1000000),
+  fpsNum: z.number().int().positive().max(rationalMax),
+  fpsDen: z.number().int().positive().max(rationalMax),
   width: z.number().positive(),
   height: z.number().positive(),
   audioChannels: z.number().int().min(1).max(2),

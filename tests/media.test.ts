@@ -4,7 +4,13 @@ import { mkdtemp, mkdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { MediaEngine } from "../electron/media.js";
-import { defaults, keepRanges, duration, frameUs } from "../shared/model.js";
+import {
+  defaults,
+  keepRanges,
+  duration,
+  frameUs,
+  projectSchema,
+} from "../shared/model.js";
 test("真实 FFmpeg：中文路径导入、静音检测、音画同步导出、29.97 fps、VFR、取消与失败清理", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "cuthelper-test-"));
   const engine = new MediaEngine(
@@ -63,6 +69,47 @@ test("真实 FFmpeg：中文路径导入、静音检测、音画同步导出、2
       Math.abs(Number(streams[0].duration) - Number(streams[1].duration)) <=
         frameUs(m) / 1e6,
     );
+    await t.test("大分子帧率经过项目校验后可真实生成粗剪预览", async () => {
+      const metadata = JSON.parse(
+        await engine.run(engine.bins.ffprobe, [
+          "-v",
+          "error",
+          "-show_streams",
+          "-show_format",
+          "-of",
+          "json",
+          file,
+        ]),
+      );
+      metadata.streams.find(
+        (s: any) => s.codec_type === "video",
+      ).avg_frame_rate = "51234569/1707819";
+      const probeEngine = new MediaEngine(root, engine.bins);
+      probeEngine.run = async () => JSON.stringify(metadata);
+      const high = await probeEngine.probe(file);
+      const p = projectSchema.parse({
+        version: 1,
+        media: high,
+        params: defaults,
+        candidates: cs,
+        analyzed: true,
+        analysisParams: defaults,
+      });
+      assert.equal(p.media.fpsNum, 51234569);
+      const retained = keepRanges(high, cs),
+        target = path.join(root, "large-fps-preview.mp4");
+      await engine.render(high, retained, target, undefined, true);
+      const rendered = await engine.probe(target);
+      assert.ok(
+        Math.abs(rendered.durationUs - duration(retained)) <= frameUs(high),
+      );
+      metadata.streams.find(
+        (s: any) => s.codec_type === "video",
+      ).avg_frame_rate = "0/0";
+      metadata.streams.find((s: any) => s.codec_type === "video").r_frame_rate =
+        "30000/1001";
+      assert.equal((await probeEngine.probe(file)).fpsNum, 30000);
+    });
     await t.test("全静音及无静音", async () => {
       for (const silent of [true, false]) {
         const dest = path.join(root, `silent-${silent}.mp4`);

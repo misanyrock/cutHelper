@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <title>CutHelper</title>
+  <desc>A white play symbol with a diagonal edit cut on a teal rounded square.</desc>
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="#009A8E"/>
+  <path d="M352 316C352 289 381 273 404 287L744 487C763 498 763 526 744 537L404 737C381 751 352 735 352 708V316Z" fill="white"/>
+  <path d="M526 307L428 735" stroke="#009A8E" stroke-width="44"/>
+</svg>

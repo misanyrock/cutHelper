@@ -225,9 +225,11 @@ export default function App() {
     >
       <header className="header">
         <div className="brand">
-          <span className="brand-mark">
-            <Play fill="currentColor" size={18} />
-          </span>
+          <img
+            className="brand-mark"
+            src={`${import.meta.env.BASE_URL}icon.svg`}
+            alt=""
+          />
           <h1>CutHelper</h1>
         </div>
         <div className="project-name">

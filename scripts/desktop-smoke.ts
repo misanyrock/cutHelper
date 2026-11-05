@@ -58,6 +58,28 @@ page.on("console", (m) => {
 });
 try {
   await page.getByText("把停顿留给我们").waitFor();
+  const emptyCapture = await app.evaluate(async ({ BrowserWindow }) =>
+    (
+      await BrowserWindow.getAllWindows()[0].capturePage(undefined, {
+        stayHidden: true,
+        stayAwake: true,
+      })
+    )
+      .toPNG()
+      .toString("base64"),
+  );
+  await writeFile(
+    "/private/tmp/cuthelper-import.png",
+    Buffer.from(emptyCapture, "base64"),
+  );
+  assert.ok(
+    await page
+      .locator("img.brand-mark")
+      .evaluate(
+        (img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
+      ),
+  );
+
   assert.match(await page.title(), /CutHelper/);
   await app.evaluate(({ dialog }, input) => {
     dialog.showOpenDialog = async () => ({
@@ -258,5 +280,5 @@ try {
     for (const w of BrowserWindow.getAllWindows()) w.destroy();
   });
   await app.close();
-  await rm(root, {recursive:true, force:true});
+  await rm(root, { recursive: true, force: true });
 }
