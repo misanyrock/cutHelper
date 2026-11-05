@@ -93,3 +93,34 @@ jobs:
           path: |
             release/*.dmg
             release/*.exe
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: CutHelper-*
+          path: installers
+      - name: Upload installers to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          shopt -s nullglob
+          installers=(installers/*/*.dmg installers/*/*.exe)
+          if [ "${#installers[@]}" -ne 3 ]; then
+            echo "Expected three platform installers, found ${#installers[@]}" >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${installers[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${installers[@]}" --verify-tag --title "$RELEASE_TAG" --generate-notes
+          fi
