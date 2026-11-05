@@ -37,7 +37,7 @@ CutHelper 是一个桌面端剪辑辅助工具，适合课程、访谈、自媒�
 
 ## 获取桌面版
 
-当前为 **v0.2.0 验证版**。安装包可从 [Actions 构建运行](https://github.com/misanyrock/cutHelper/actions/workflows/build.yml)的 Artifacts 下载，尚未发布 GitHub Release。
+当前源码版本为 **v0.2.2 验证版**。已发布的安装包可从 [Releases](https://github.com/misanyrock/cutHelper/releases) 的 Assets 下载，也可从 [Actions 构建运行](https://github.com/misanyrock/cutHelper/actions/workflows/build.yml)的 Artifacts 下载。
 
 在项目目录运行 `npm run dist:mac` 或 `npm run dist:win` 可生成安装包。Mac 包为未签名本地构建；Windows 和专业剪辑软件实际导入兼容性仍待对应环境验证。
 
@@ -157,7 +157,14 @@ npm version patch -m "chore: release %s"
 git push origin main --follow-tags
 ```
 
-`npm version patch` 会同步更新版本号、创建提交和版本标签（例如 `v0.2.1`）。标签必须指向包含新工作流的提交，旧标签不会自动回补构建；已推送的版本标签不应改写。
+`npm version patch` 会同步更新版本号、创建提交和版本标签。请勿只创建标签而不更新 `package.json` 和 `package-lock.json`，版本不一致时三个平台都会在校验步骤失败。标签必须指向包含新工作流的提交，旧标签不会自动回补构建；已推送的版本标签不应改写。
+
+本次源码已同步为 `0.2.2`（跳过构建失败的 `v0.2.1`），提交本次修改后，直接发布对应标签，不再运行 `npm version patch`：
+
+```sh
+git tag -a v0.2.2 -m "CutHelper 0.2.2"
+git push origin main --follow-tags
+```
 
 版本标签下的三个平台全部构建成功后，工作流会自动创建对应的 GitHub Release（已存在则复用），并上传两个 `.dmg` 和一个 `.exe`，可直接在 **Releases → Assets** 下载。重跑会替换同名安装包；在 Actions 手动运行时选择 `v*` 标签也会发布，选择分支则只构建。
 
