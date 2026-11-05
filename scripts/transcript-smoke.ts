@@ -12,9 +12,11 @@ import {
 } from "../shared/model.js";
 const root = await mkdtemp(path.join(os.tmpdir(), "cuthelper-text-ui-"));
 const model =
-  process.env.CUTHELPER_TEST_MODEL ?? "/private/tmp/cuthelper-ggml-small.bin";
+  process.env.CUTHELPER_TEST_MODEL ??
+  path.resolve(".cache/speech-tests/ggml-tiny.bin");
 const audio =
-  process.env.CUTHELPER_TEST_AUDIO ?? "/private/tmp/cuthelper-jfk.wav";
+  process.env.CUTHELPER_TEST_AUDIO ?? path.resolve(".cache/speech-tests/jfk.wav");
+const screenshot = path.join(os.tmpdir(), "cuthelper-transcript-desktop.png");
 const language = process.env.CUTHELPER_TEST_LANGUAGE === "zh" ? "zh" : "en";
 const correction =
   language === "zh"
@@ -283,14 +285,14 @@ try {
   await page.waitForTimeout(500);
   await page.locator("video").evaluate((v: HTMLVideoElement) => v.pause());
   await page.waitForTimeout(200);
-  await capture("/private/tmp/cuthelper-transcript-desktop.png");
+  await capture(screenshot);
   await page.getByRole("button", { name: "关闭导出菜单", exact: true }).click();
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
       passed: true,
       segments: count,
-      screenshot: "/private/tmp/cuthelper-transcript-desktop.png",
+      screenshot,
       flows: [
         "real offline transcription",
         "click-to-seek",
