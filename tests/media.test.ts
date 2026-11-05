@@ -207,15 +207,22 @@ test("真实 FFmpeg：中文路径导入、静音检测、音画同步导出、2
     });
     await t.test("手机竖屏旋转信息规范化", async () => {
       const dest = path.join(root, "rotated.mp4");
+      // Set input display rotation explicitly: writing a rotate metadata tag
+      // is ignored by some of the platform-specific FFmpeg builds.
       await engine.ff([
+        "-display_rotation:v:0",
+        "90",
         "-i",
         file,
         "-c",
         "copy",
-        "-metadata:s:v:0",
-        "rotate=90",
         dest,
       ]);
+      assert.equal(
+        Math.abs((await engine.probe(dest)).rotation),
+        90,
+        "The test fixture must contain a 90-degree display rotation",
+      );
       const mm = await engine.import(dest);
       assert.equal(mm.normalized, true);
       assert.equal(mm.width, 180);

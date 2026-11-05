@@ -33,7 +33,7 @@ CutHelper 是一个桌面端剪辑辅助工具，适合课程、访谈、自媒�
 
 ## 获取桌面版
 
-当前为 **v0.1.1 本地验证版**。源码与构建配置已提供；本次 GitHub 推送不包含安装包，尚未发布 GitHub Release。
+当前为 **v0.1.2 验证版**。安装包可从 [Actions 构建运行](https://github.com/misanyrock/cutHelper/actions/workflows/build.yml)的 Artifacts 下载，尚未发布 GitHub Release。
 
 在项目目录运行 `npm run dist:mac` 或 `npm run dist:win` 可生成安装包。Mac 包为未签名本地构建；Windows 和专业剪辑软件实际导入兼容性仍待对应环境验证。
 
@@ -135,7 +135,7 @@ npm version patch -m "chore: release %s"
 git push origin main --follow-tags
 ```
 
-`npm version patch` 会同步更新版本号、创建提交和版本标签（例如 `v0.1.2`）。标签必须指向包含新工作流的提交，旧标签不会自动回补构建；已推送的版本标签不应改写。
+`npm version patch` 会同步更新版本号、创建提交和版本标签（例如 `v0.1.3`）。标签必须指向包含新工作流的提交，旧标签不会自动回补构建；已推送的版本标签不应改写。
 
 构建完成后，进入对应 Actions 运行页面，在 **Artifacts** 下载各平台安装包压缩包。产物保留 30 天；该工作流不自动创建 GitHub Release，也不发布自动更新，Mac 包仍为未签名构建。
 
