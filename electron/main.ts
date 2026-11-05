@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, net } from "electron";
 import path from "node:path";
+import { mkdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import {
@@ -13,16 +14,24 @@ import {
 } from "node:fs/promises";
 import { MediaEngine, binaries } from "./media.js";
 import { fcp7, fcpxml } from "./timeline.js";
+import { SpeechEngine } from "./speech.js";
+import {serveMediaFile} from "./media-protocol.js";
+import { subtitleSrt } from "../shared/transcript.js";
 import {
   defaults,
   paramsSchema,
   projectSchema,
-  keepRanges,
+  projectRanges,
   type Media,
   type Project,
   type ExportKind,
 } from "../shared/model.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
+const userDataOverride = app.commandLine.getSwitchValue("user-data-dir");
+if (userDataOverride && path.isAbsolute(userDataOverride)) {
+  mkdirSync(userDataOverride, { recursive: true });
+  app.setPath("userData", userDataOverride);
+}
 let win: BrowserWindow,
   engine: MediaEngine,
   active: Media | null = null,
@@ -55,7 +64,7 @@ async function task<T>(stage: string, fn: (s: AbortSignal) => Promise<T>) {
     return r;
   } catch (e) {
     win.webContents.send("progress", { stage: "已停止", percent: null });
-    throw e;
+    throw controller?.signal.aborted ? new Error("任务已取消") : e;
   } finally {
     controller = null;
   }
@@ -64,7 +73,10 @@ function checked(raw: unknown): Project {
   const p = projectSchema.parse(raw);
   if (!active || JSON.stringify(p.media) !== JSON.stringify(active))
     throw new Error("素材状态已变化，请重新打开项目");
-  if (p.candidates.some((c) => c.endUs > p.media.durationUs))
+  if (
+    p.candidates.some((c) => c.endUs > p.media.durationUs) ||
+    p.transcript?.segments.some((s) => s.endUs > p.media.durationUs)
+  )
     throw new Error("剪辑区间超出素材");
   return p;
 }
@@ -75,7 +87,8 @@ async function loaded(media: Media, signal: AbortSignal, project?: Project) {
   active = media;
   return {
     project: project ?? {
-      version: 1,
+      version: 2,
+      transcript: null,
       media,
       params: defaults,
       candidates: [],
@@ -135,7 +148,7 @@ app.whenReady().then(async () => {
       file = urls.get(url.pathname.slice(1));
     if (url.hostname !== "local" || !file)
       return new Response("Not found", { status: 404 });
-    return net.fetch(pathToFileURL(file).href, { headers: request.headers });
+    return serveMediaFile(file,request);
   });
   const applicationIcon = path.join(here, "../../dist/icon.png");
   if (process.platform === "darwin") app.dock?.setIcon(applicationIcon);
@@ -187,6 +200,47 @@ app.whenReady().then(async () => {
       throw new Error("无效视频路径");
     return task("导入视频", (s) => importFile(file, s));
   });
+  const speech = new SpeechEngine(
+    path.join(app.getPath("userData"), "speech"),
+    app.isPackaged
+      ? path.join(
+          process.resourcesPath,
+          "media",
+          "whisper-cli" + (process.platform === "win32" ? ".exe" : ""),
+        )
+      : path.resolve(
+          ".cache/whisper-runtime",
+          `${process.platform}-${process.arch}`,
+          "whisper-cli" + (process.platform === "win32" ? ".exe" : ""),
+        ),
+    engine,
+    (p) => win.webContents.send("progress", p),
+  );
+  handle("model-status", () => speech.status());
+  handle("model-download", () =>
+    task("下载语音模型", (signal) =>
+      speech.download((url, s) => net.fetch(url, { signal: s }), signal),
+    ),
+  );
+  handle("model-import", async () => {
+    const result = await dialog.showOpenDialog(win, {
+      title: "导入 whisper.cpp 语音模型",
+      filters: [{ name: "GGML 模型", extensions: ["bin"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled) return null;
+    return task("导入语音模型", (signal) =>
+      speech.importModel(result.filePaths[0], signal),
+    );
+  });
+  handle("transcribe", (language: unknown) => {
+    if (!active) throw new Error("请先导入视频");
+    if (!["auto", "zh", "en"].includes(String(language)))
+      throw new Error("不支持的转写语言");
+    return task("转写文字", (signal) =>
+      speech.transcribe(active!, language as "auto" | "zh" | "en", signal),
+    );
+  });
   handle("analyze", (raw: unknown) => {
     const p = paramsSchema.parse(raw);
     if (!active) throw new Error("请先导入视频");
@@ -196,13 +250,7 @@ app.whenReady().then(async () => {
     const p = checked(raw);
     return task("生成预览", async (s) => {
       const file = path.join(root, `${randomUUID()}-cut.mp4`);
-      await engine.render(
-        p.media,
-        keepRanges(p.media, p.candidates),
-        file,
-        s,
-        true,
-      );
+      await engine.render(p.media, projectRanges(p), file, s, true);
       tempPreviews.push(file);
       return mediaUrl(file);
     });
@@ -262,16 +310,23 @@ app.whenReady().then(async () => {
           throw new Error("重新定位的素材与项目时长、分辨率或帧率不匹配");
         p = { ...p, media };
       }
-      if (p.candidates.some((c) => c.endUs > p.media.durationUs))
+      if (
+        p.candidates.some((c) => c.endUs > p.media.durationUs) ||
+        p.transcript?.segments.some((s) => s.endUs > p.media.durationUs)
+      )
         throw new Error("项目包含无效剪辑区间");
       return loaded(p.media, signal, p);
     });
   });
   handle("export", async (raw: unknown, kind: ExportKind) => {
     const p = checked(raw);
-    if (!["mp4", "premiere", "resolve", "fcpxml", "jianying"].includes(kind))
+    if (
+      !["mp4", "premiere", "resolve", "fcpxml", "jianying", "srt"].includes(
+        kind,
+      )
+    )
       throw new Error("未知导出类型");
-    const rs = keepRanges(p.media, p.candidates);
+    const rs = projectRanges(p);
     if (!rs.length) throw new Error("没有保留片段，请先恢复至少一段");
     if (kind === "jianying") {
       const r = await dialog.showOpenDialog(win, {
@@ -309,6 +364,20 @@ app.whenReady().then(async () => {
           await rm(temporary, { recursive: true, force: true });
         }
       });
+    }
+    if (kind === "srt") {
+      const subtitle = subtitleSrt(p);
+      const result = await dialog.showSaveDialog(win, {
+        defaultPath: `${path.parse(p.media.name).name}-粗剪.srt`,
+        filters: [{ name: "SRT 字幕", extensions: ["srt"] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      await task("导出粗剪字幕", async () =>
+        atomicFile(result.filePath!, (temp) =>
+          writeFile(temp, subtitle, "utf8"),
+        ),
+      );
+      return result.filePath;
     }
     const ext = kind === "mp4" ? "mp4" : kind === "fcpxml" ? "fcpxml" : "xml";
     const r = await dialog.showSaveDialog(win, {

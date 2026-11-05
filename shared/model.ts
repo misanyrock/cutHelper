@@ -42,14 +42,49 @@ export const mediaSchema = z.object({
   audioIndex: z.number().int().nonnegative(),
 });
 export type Media = z.infer<typeof mediaSchema>;
-export const projectSchema = z.object({
-  version: z.literal(1),
-  media: mediaSchema,
-  params: paramsSchema,
-  candidates: z.array(candidateSchema).max(100000),
-  analyzed: z.boolean(),
-  analysisParams: paramsSchema.nullable().default(null),
+export const transcriptSegmentSchema = rangeSchema.safeExtend({
+  id: z.string().min(1),
+  text: z.string().max(20000),
+  originalText: z.string().max(20000),
+  remove: z.boolean().default(false),
 });
+export type TranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
+export const transcriptSchema = z.object({
+  language: z.enum(["auto", "zh", "en"]),
+  modelHash: z.string(),
+  createdAt: z.string(),
+  segments: z.array(transcriptSegmentSchema).max(100000),
+});
+export type Transcript = z.infer<typeof transcriptSchema>;
+export const projectSchema = z
+  .object({
+    version: z.union([z.literal(1), z.literal(2)]),
+    media: mediaSchema,
+    params: paramsSchema,
+    candidates: z.array(candidateSchema).max(100000),
+    analyzed: z.boolean(),
+    analysisParams: paramsSchema.nullable().default(null),
+    transcript: transcriptSchema.nullable().default(null),
+  })
+  .superRefine((p, ctx) => {
+    const ids = new Set<string>();
+    let previousEnd = 0;
+    for (const [index, s] of (p.transcript?.segments ?? []).entries()) {
+      if (
+        ids.has(s.id) ||
+        s.startUs < previousEnd ||
+        s.endUs > p.media.durationUs
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "文字段落时间或编号无效",
+          path: ["transcript", "segments", index],
+        });
+      ids.add(s.id);
+      previousEnd = s.endUs;
+    }
+  })
+  .transform((p) => ({ ...p, version: 2 as const }));
 export type Project = z.infer<typeof projectSchema>;
 export type Loaded = {
   project: Project;
@@ -57,7 +92,25 @@ export type Loaded = {
   sourceUrl: string;
 };
 export type Progress = { stage: string; percent: number | null };
-export type ExportKind = "mp4" | "premiere" | "resolve" | "fcpxml" | "jianying";
+export type ExportKind =
+  "mp4" | "premiere" | "resolve" | "fcpxml" | "jianying" | "srt";
+export type ModelStatus = {
+  ready: boolean;
+  runtimeReady: boolean;
+  name: string;
+  bytes: number;
+  hash: string | null;
+};
+export function cutCandidates(p: Project): Candidate[] {
+  return [
+    ...p.candidates,
+    ...(p.transcript?.segments
+      .filter((s) => s.remove)
+      .map((s) => ({ ...s, id: `text:${s.id}` })) ?? []),
+  ];
+}
+export const projectRanges = (p: Project) =>
+  keepRanges(p.media, cutCandidates(p));
 export const frameUs = (m: Pick<Media, "fpsNum" | "fpsDen">) =>
   (1e6 * m.fpsDen) / m.fpsNum;
 export const totalFrames = (m: Media) =>

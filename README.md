@@ -4,16 +4,16 @@
 
 <h1 align="center">CutHelper</h1>
 
-<p align="center">剪掉冗长停顿，保留你的表达节奏。</p>
-<p align="center">离线口播自动粗剪 · macOS / Windows · 无账号 · 素材不上传</p>
+<p align="center">像读文稿一样剪视频，保留你的表达节奏。</p>
+<p align="center">离线文字剪辑与口播粗剪 · macOS / Windows · 无账号 · 素材不上传</p>
 
-CutHelper 是一个桌面端剪辑辅助工具，适合课程、访谈、自媒体口播。导入一段视频，自动找出长停顿，检查保留或删除，再导出粗剪视频或可继续编辑的时间线。
+CutHelper 是一个桌面端剪辑辅助工具，适合课程、访谈、自媒体口播。导入视频后，在本机转写文字，按段落删减内容，并结合静音检测去除停顿，最后导出粗剪视频、编辑器时间线和同步字幕。
 
 ## 应用界面
 
 ![CutHelper 桌面工作台](docs/images/workspace.png)
 
-*真实桌面应用截图：静音片段检查、视频预览、参数调整、波形时间线和多格式导出。画面中的视频为自动生成的测试素材。*
+*真实桌面应用截图：离线普通话转写、文字删减、原片定位、静音参数、波形时间线和多格式导出。演示视频由本地合成语音与应用图标画面组成。*
 
 <details>
 <summary>查看导入界面</summary>
@@ -24,6 +24,10 @@ CutHelper 是一个桌面端剪辑辅助工具，适合课程、访谈、自媒�
 
 ## 主要功能
 
+- **离线文字剪辑**：普通话 / 英语 / 自动识别，点击段落定位原片，播放时高亮当前段落。
+- **按段落删减**：勾选、Shift 连选、批量删除和恢复；支持撤销剪辑，修正识别错字不会改变视频时长。
+- **同步字幕**：导出按粗剪时间轴重新计算的 SRT，沿用修正后的文案。
+
 - **自动粗剪**：根据音量和停顿时长检测静音，为语音两侧保留可调保护区。
 - **检查与恢复**：片段列表、波形和播放位置联动，逐段保留或删除。
 - **真实预览**：切换原片与粗剪；人工修改后重新生成预览，避免播放旧结果。
@@ -33,13 +37,13 @@ CutHelper 是一个桌面端剪辑辅助工具，适合课程、访谈、自媒�
 
 ## 获取桌面版
 
-当前为 **v0.1.2 验证版**。安装包可从 [Actions 构建运行](https://github.com/misanyrock/cutHelper/actions/workflows/build.yml)的 Artifacts 下载，尚未发布 GitHub Release。
+当前为 **v0.2.0 验证版**。安装包可从 [Actions 构建运行](https://github.com/misanyrock/cutHelper/actions/workflows/build.yml)的 Artifacts 下载，尚未发布 GitHub Release。
 
 在项目目录运行 `npm run dist:mac` 或 `npm run dist:win` 可生成安装包。Mac 包为未签名本地构建；Windows 和专业剪辑软件实际导入兼容性仍待对应环境验证。
 
 ## 开发与运行
 
-使用 Node.js 22 LTS 和 npm：
+使用 Node.js 22 LTS、npm、CMake，以及 C/C++ 编译工具（Mac 的 Xcode Command Line Tools，Windows 的 Visual Studio C++ 工具）：
 
 ```sh
 git clone https://github.com/misanyrock/cutHelper.git
@@ -48,12 +52,16 @@ npm ci
 npm run dev
 ```
 
-首次安装需联网下载 Electron、FFmpeg 和 npm 依赖；安装完成后运行无需网络。安装包自带 FFmpeg、FFprobe。`npm run dev` 会启动 Vite 并打开真实桌面窗口，关闭桌面窗口后开发服务器退出。修改主进程或 preload 后需重启开发命令。
+首次开发安装需联网下载 Electron、FFmpeg、npm 依赖和固定版本 whisper.cpp 源码；第一次启动会编译语音运行时。安装包自带 FFmpeg、FFprobe 和离线语音运行时，使用者无需安装编译器。语音模型单独准备，下载或导入后可完全离线转写。`npm run dev` 会启动 Vite 并打开真实桌面窗口，关闭桌面窗口后开发服务器退出。修改主进程或 preload 后需重启开发命令。
 
 ```sh
 npm test                 # 区间与格式单元测试、真实 FFmpeg 集成测试
 npm run build            # TypeScript 检查、前端和主进程编译
-npm run test:desktop     # 构建后用 Playwright 测试真实 Electron 工作流
+npm run test:desktop     # 构建后验证原有静音剪辑桌面流程
+npm run speech:prepare   # 首次编译离线语音运行时，后续复用缓存
+node scripts/speech-test-model.mjs  # 下载并校验语音集成测试所需的 tiny 模型和音频
+npm run test:speech      # 真实本地模型转写、缓存、删句、SRT 与视频导出
+npm run test:transcript  # 真实桌面文字剪辑流程；可通过 CUTHELPER_TEST_MODEL / CUTHELPER_TEST_AUDIO 指定测试素材
 npm run pack             # 本机可运行的应用目录
 npm run dist:mac         # 在 Mac 上生成 DMG
 npm run dist:win         # 在 Windows 上生成 NSIS 安装包
@@ -61,7 +69,19 @@ npm run dist:win         # 在 Windows 上生成 NSIS 安装包
 
 桌面测试需要可用的图形桌面会话，测试对话框由自动化适配，不会操作用户素材。测试样本创建在系统临时目录。构建产物位于 `release/`，不进入 Git。支持当前 macOS 的 Apple Silicon 开发与打包；Windows x64 构建配置见 `.github/workflows/build.yml`。跨平台安装包需在对应系统构建、验证，不将本机 Mac 验证等同于 Windows 验证。
 
-## 使用
+## 文字剪辑
+
+1. 导入视频，在左侧「文字」中点击「下载模型」，准备 Small 多语言模型（约 465 MiB），或导入已有 whisper.cpp GGML `.bin` 模型。下载支持取消，并校验固定版本模型的 SHA256。
+2. 选择普通话、英语或自动识别，点击「转写文字」。转写使用本地音频与模型，不上传素材；相同素材、模型和语言的成功结果会缓存。
+3. 点击文字或时间戳定位原片。勾选段落后点击「删除片段」；Shift 点击可连续选择。删除显示删除线，波形同步标记；「恢复文字」和「撤销剪辑」可撤回选择，Cmd/Ctrl+Z 在非输入框区域可撤销。
+4. 用铅笔按钮修正识别文字并点击「完成修正」。此操作只修改字幕文案，不修改声音或剪辑点。
+5. 文字删除与静音删除取并集；恢复文字不会自动清除该区间的静音删除。界面会显示「此段仍含静音剪切」，可点击「恢复该处静音」。
+6. 点击「粗剪」按需生成真实预览，再导出视频、时间线或「粗剪字幕 SRT」。修改选句不会立即重新编码整个视频。
+7. 保存项目会保留转写、修正和删除选择。旧版项目自动迁移到 v2 格式；新项目请使用 v0.2.0 或更新版本打开。
+
+识别段落并不保证逐字或精确语义句子边界，剪切前应试听核对。口头禅自动删除、重复内容识别、说话人区分及逐字剪辑尚未实现。模型的实际语言能力以所导入模型为准；默认 Small 模型支持多语言。
+
+## 静音粗剪
 
 1. 点击「导入视频」或拖入一个 MP4、MOV、MKV。导入会检查帧率、读取波形并生成浏览器可播放的预览，长视频可能需要等待。
 2. 默认以 −35 dB 检测至少 0.6 秒的静音，在语音两侧各保留 0.12 秒。点「分析停顿」。轻声被切掉时降低阈值，停顿太碎时增大最短停顿。
@@ -75,6 +95,7 @@ npm run dist:win         # 在 Windows 上生成 NSIS 安装包
 | 输出 | 使用方式 | 保留裁切余量 |
 | --- | --- | --- |
 | MP4 | H.264 / AAC，可直接播放；重新编码，源分辨率 | 否 |
+| SRT | 修正后的文字，时间已映射到粗剪视频 | 不适用 |
 | Premiere XML | Premiere 的文件 → 导入，传统 FCP 7 XML | 是 |
 | 达芬奇 XML | DaVinci Resolve 的文件 → 导入 → 时间线 | 是 |
 | Final Cut Pro FCPXML | Final Cut Pro 的文件 → 导入 → XML，FCPXML 1.9 | 是 |
@@ -90,10 +111,11 @@ npm run dist:win         # 在 Windows 上生成 NSIS 安装包
 
 ## 首版边界
 
-- 一次一个 SDR 视频，使用首个非封面视频轨与首个音轨，输出最多双声道。字幕、多机位、多音轨混音、特效和转场不在首版中。
+- 一次一个 SDR 视频，使用首个非封面视频轨与首个音轨，输出最多双声道。多机位、多音轨混音、特效和转场尚未支持。
+- v0.2.0 的 Mac 应用要求 macOS 13.3 或更新版本。转写速度取决于素材、模型和硬件，Windows / Intel 可通过导入较小的多语言模型降低资源需求。
 - 静音检测按音量判断，不理解语义；带持续背景音乐的素材、口误和重复语句需要人工处理。
 - 应用预览使用 720p 代理；最终 MP4 保持工作素材分辨率。HDR 会提示先转成 SDR。
-- 应用数据在 Electron 的用户数据目录 `CutHelper/media`（开发模式可能为 `cuthelper/media`）。包含恒定帧率副本与临时预览；正常退出会清理本次预览。保存的项目可能引用工作副本，不应在使用项目期间删除整个数据目录。
+- 应用数据在 Electron 的用户数据目录 `CutHelper/media`（开发模式可能为 `cuthelper/media`）。包含恒定帧率副本与临时预览；同级 `speech/` 目录保存模型和转写缓存；正常退出会清理本次预览。保存的项目可能引用工作副本，不应在使用项目期间删除整个数据目录。
 - 首版为未签名本地构建，没有公开发布或自动更新。Windows、Premiere、Resolve、Final Cut Pro 的实际导入测试须在具备对应系统及软件的环境完成；结构测试不等同于软件导入兼容认证。
 
 ## 图标与品牌资源
@@ -111,8 +133,8 @@ npm run dist:win         # 在 Windows 上生成 NSIS 安装包
 | 检查 | 状态 |
 | --- | --- |
 | TypeScript 与生产构建 | 通过 |
-| 剪辑模型、XML 与真实 FFmpeg 测试 | 14 项通过 |
-| macOS 打包应用完整工作流 | 已验证导入、分析、恢复、播放、项目保存、五种导出和素材重定位 |
+| 剪辑模型、XML 与真实 FFmpeg 测试 | 19 项通过，另有真实模型集成测试 |
+| macOS 打包应用完整工作流 | 已验证普通话文字剪辑、字幕修正、SRT/MP4 导出、撤销恢复、保存重开；原有静音与编辑器导出另外回归 |
 | 桌面和窄屏界面 | 已检查；桌面 1536 × 1024、窄屏 390 × 844 |
 | Windows 运行 / 专业编辑器内导入 | 待对应环境验证 |
 
@@ -135,7 +157,7 @@ npm version patch -m "chore: release %s"
 git push origin main --follow-tags
 ```
 
-`npm version patch` 会同步更新版本号、创建提交和版本标签（例如 `v0.1.3`）。标签必须指向包含新工作流的提交，旧标签不会自动回补构建；已推送的版本标签不应改写。
+`npm version patch` 会同步更新版本号、创建提交和版本标签（例如 `v0.2.1`）。标签必须指向包含新工作流的提交，旧标签不会自动回补构建；已推送的版本标签不应改写。
 
 构建完成后，进入对应 Actions 运行页面，在 **Artifacts** 下载各平台安装包压缩包。产物保留 30 天；该工作流不自动创建 GitHub Release，也不发布自动更新，Mac 包仍为未签名构建。
 
@@ -147,6 +169,6 @@ git push origin main --follow-tags
 
 `electron/`：受限 IPC、媒体子进程、项目文件、XML 导出。`shared/`：项目校验、帧与时间换算、剪辑模型。`src/`：React 工作台及波形、参数、片段组件。`tests/`：纯逻辑及真实媒体测试。设计基准见 `docs/design/workspace.png` 和 `docs/design/spec.md`。
 
-IPC 仅提供导入、分析、预览、保存、打开、导出、取消与任务进度；渲染进程无 Node.js 权限。播放 URL 使用内部令牌映射，不提供任意文件 URL。FFmpeg 以参数数组执行，无 shell 拼接。导出临时文件位于目标目录，成功后重命名完成写入。
+IPC 提供受限的导入、静音分析、模型管理、离线转写、预览、项目读写、导出、取消与任务进度；渲染进程无 Node.js 权限。播放 URL 使用内部令牌映射，不提供任意文件 URL。FFmpeg 以参数数组执行，无 shell 拼接。导出临时文件位于目标目录，成功后重命名完成写入。
 
 应用源码遵循 [Apache-2.0](LICENSE)；媒体二进制及其他第三方许可见 [第三方说明](docs/THIRD_PARTY.md)。

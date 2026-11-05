@@ -25,6 +25,11 @@ node_modules/
 *.mp4
 *.mov
 *.mkv
+*.wav
+*.aiff
+*.srt
+*.bin
+*.gguf
 *.partial
 /.cuthelper-*
 /ChatGPT 图像 *.png

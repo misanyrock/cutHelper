@@ -63,6 +63,8 @@ export default function Timeline({
           保留（有语音）
           <i className="removed" />
           删除（静音）
+          <i className="text-removed" />
+          文字删除
         </span>
         <div className="zoom">
           <span>缩放</span>
@@ -118,8 +120,12 @@ export default function Timeline({
             {candidates.map((c) => (
               <button
                 key={c.id}
-                aria-label={`定位静音 ${c.id}`}
-                className={`region ${c.remove ? "deleted" : "kept"} ${selected === c.id ? "selected" : ""}`}
+                aria-label={
+                  c.id.startsWith("text:")
+                    ? `定位文字片段 ${c.id.slice(5)}`
+                    : `定位静音 ${c.id}`
+                }
+                className={`region ${c.remove ? "deleted" : "kept"} ${c.id.startsWith("text:") ? "text-region" : ""} ${selected === c.id ? "selected" : ""}`}
                 style={{
                   left: `${(c.startUs / duration) * 100}%`,
                   width: `${Math.max(0.12, ((c.endUs - c.startUs) / duration) * 100)}%`,
@@ -130,7 +136,7 @@ export default function Timeline({
                   onSeek(c.startUs);
                 }}
               >
-                <span>{c.id}</span>
+                <span>{c.id.startsWith("text:") ? "文" : c.id}</span>
               </button>
             ))}
             {media ? (

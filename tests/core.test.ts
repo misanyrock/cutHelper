@@ -34,7 +34,8 @@ export const media: Media = {
   audioIndex: 1,
 };
 export const project = (m = media): Project => ({
-  version: 1,
+  version: 2,
+  transcript: null,
   media: m,
   params: defaults,
   candidates: [],

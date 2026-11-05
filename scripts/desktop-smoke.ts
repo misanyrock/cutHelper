@@ -94,6 +94,7 @@ try {
   await page
     .getByText("中文 访谈样本.mp4", { exact: true })
     .waitFor({ timeout: 120000 });
+  await page.getByRole("tab", {name:"静音",exact:true}).click();
   await page.getByRole("button", { name: "分析停顿", exact: true }).click();
   await page.getByText("共发现 3 段候选静音").waitFor({ timeout: 120000 });
   await page.getByRole("switch", { name: "删除静音 1", exact: true }).click();

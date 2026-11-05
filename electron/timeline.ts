@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 import {
   frame,
-  keepRanges,
+  projectRanges,
   totalFrames,
   type Project,
 } from "../shared/model.js";
@@ -19,7 +19,7 @@ const xml = (s: string) =>
   );
 export function fcp7(p: Project, editor: "premiere" | "resolve") {
   const m = p.media,
-    rs = keepRanges(m, p.candidates),
+    rs = projectRanges(p),
     rate = Math.round(m.fpsNum / m.fpsDen),
     ntsc = m.fpsDen === 1001 ? "TRUE" : "FALSE";
   const rateXml = `<rate><timebase>${rate}</timebase><ntsc>${ntsc}</ntsc></rate>`;
@@ -58,7 +58,7 @@ export function fcp7(p: Project, editor: "premiere" | "resolve") {
 }
 export function fcpxml(p: Project) {
   const m = p.media,
-    rs = keepRanges(m, p.candidates),
+    rs = projectRanges(p),
     time = (f: number) => `${f * m.fpsDen}/${m.fpsNum}s`;
   let offset = 0;
   const clips = rs

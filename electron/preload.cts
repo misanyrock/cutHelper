@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld("cuthelper", {
   importDropped: (file: File) =>
     ipcRenderer.invoke("drop", webUtils.getPathForFile(file)),
   analyze: (params: unknown) => ipcRenderer.invoke("analyze", params),
+  modelStatus: () => ipcRenderer.invoke("model-status"),
+  downloadModel: () => ipcRenderer.invoke("model-download"),
+  importModel: () => ipcRenderer.invoke("model-import"),
+  transcribe: (language: string) => ipcRenderer.invoke("transcribe", language),
   preview: (project: unknown) => ipcRenderer.invoke("preview", project),
   saveProject: (project: unknown) => ipcRenderer.invoke("save", project),
   openProject: () => ipcRenderer.invoke("open"),

@@ -65,8 +65,22 @@ jobs:
           NODE
       - name: Install dependencies and media runtime
         run: npm ci
+      - name: Cache offline speech runtime and test model
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/whisper-runtime
+            .cache/downloads
+            .cache/speech-tests
+          key: whisper-1.9.5-config3-${{ runner.os }}-${{ runner.arch }}
+      - name: Build offline speech runtime
+        run: npm run speech:prepare
       - name: Test edit model and real media processing
         run: npm test
+      - name: Test real offline speech recognition
+        run: |
+          node scripts/speech-test-model.mjs
+          npm run test:speech
       - name: Build installer
         run: npm run ${{ matrix.script }}
       - name: Upload installer

@@ -18,7 +18,10 @@ import {
 import {
   defaults,
   duration,
-  keepRanges,
+  projectRanges,
+  cutCandidates,
+  type ModelStatus,
+  type TranscriptSegment,
   cutToSource,
   sourceToCut,
   type Project,
@@ -30,7 +33,9 @@ import "./style.css";
 import Timeline from "./components/Timeline";
 import Inspector from "./components/Inspector";
 import Clips from "./components/Clips";
+import TranscriptPanel from "./components/TranscriptPanel";
 const exports: { kind: ExportKind; label: string; detail: string }[] = [
+  { kind: "srt", label: "粗剪字幕 SRT", detail: "字幕时间与粗剪视频同步" },
   { kind: "mp4", label: "视频 MP4", detail: "可直接播放的粗剪成片" },
   {
     kind: "premiere",
@@ -65,22 +70,57 @@ export default function App() {
     [error, setError] = useState(""),
     [menu, setMenu] = useState(false),
     [dragging, setDragging] = useState(false),
-    [dirty, setDirty] = useState(false);
+    [dirty, setDirty] = useState(false),
+    [sidebar, setSidebar] = useState<"text" | "silence">("text"),
+    [speechModel, setSpeechModel] = useState<ModelStatus | null>(null),
+    [historyCount, setHistoryCount] = useState(0),
+    [editorSession, setEditorSession] = useState(0);
+  const history = useRef<Project[]>([]),
+    pendingSeek = useRef<number | null>(null);
   const video = useRef<HTMLVideoElement>(null),
     projectRef = useRef(project);
   projectRef.current = project;
   const params = project?.params ?? defaults,
-    revision = JSON.stringify(project?.candidates ?? []),
+    revision = JSON.stringify(
+      project
+        ? cutCandidates(project).map((c) => [c.startUs, c.endUs, c.remove])
+        : [],
+    ),
     stalePreview = cutRevision !== revision,
     staleParams =
       !!project?.analyzed &&
       JSON.stringify(project.analysisParams) !== JSON.stringify(params);
   const ranges = useMemo(
-      () => (project ? keepRanges(project.media, project.candidates) : []),
+      () => (project ? projectRanges(project) : []),
       [project],
     ),
     cut = duration(ranges);
   useEffect(() => api?.onProgress(setProgress), [api]);
+  useEffect(() => {
+    if (api)
+      void api
+        .modelStatus()
+        .then(setSpeechModel)
+        .catch(() => {});
+  }, [api]);
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "z" &&
+        !event.shiftKey &&
+        !busy &&
+        !["INPUT", "TEXTAREA", "SELECT"].includes(
+          (event.target as HTMLElement)?.tagName,
+        )
+      ) {
+        event.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, [busy]);
   useEffect(() => {
     const listener = (e: BeforeUnloadEvent) => {
       if (dirty) {
@@ -118,6 +158,9 @@ export default function App() {
   ) {
     if (!result) return;
     setProject(result.project);
+    setEditorSession((value) => value + 1);
+    history.current = [];
+    setHistoryCount(0);
     setWaveform(result.waveform);
     setSourceUrl(result.sourceUrl);
     setCutUrl("");
@@ -137,9 +180,30 @@ export default function App() {
     if (!api || !canReplace()) return;
     accept(await action(() => api.openProject()));
   }
-  function edit(candidates: Candidate[]) {
-    setProject((p) => (p ? { ...p, candidates } : p));
+  function commitProject(next: Project) {
+    if (!projectRef.current) return;
+    history.current.push(projectRef.current);
+    if (history.current.length > 30) history.current.shift();
+    setHistoryCount(history.current.length);
+    setProject(next);
     setDirty(true);
+    if (mode === "cut") {
+      setMode("source");
+      setNotice("剪辑已更新，点击“粗剪”重新生成预览。");
+    }
+  }
+  function undo() {
+    const previous = history.current.pop();
+    if (!previous) return;
+    setHistoryCount(history.current.length);
+    setProject(previous);
+    setDirty(true);
+    setMode("source");
+    setNotice("已撤销上一次剪辑");
+  }
+  function edit(candidates: Candidate[]) {
+    if (!projectRef.current) return;
+    commitProject({ ...projectRef.current, candidates });
     if (mode === "cut") {
       setMode("source");
       setNotice("剪辑已更新，请重新生成粗剪预览。");
@@ -151,6 +215,43 @@ export default function App() {
       video.current.currentTime =
         (mode === "cut" ? sourceToCut(us, ranges) : us) / 1e6;
   }
+  function seekSource(us: number) {
+    setCurrent(us);
+    pendingSeek.current = us;
+    if (mode !== "source") {
+      setMode("source");
+      return;
+    }
+    if (video.current && video.current.readyState >= 1) {
+      video.current.currentTime = us / 1e6;
+      pendingSeek.current = null;
+    }
+  }
+  async function changeModel(kind: "download" | "import") {
+    if (!api) return;
+    const result = await action(() =>
+      kind === "download" ? api.downloadModel() : api.importModel(),
+    );
+    if (result) setSpeechModel(result);
+  }
+  async function transcribe(language: "auto" | "zh" | "en") {
+    if (!api || !projectRef.current) return;
+    if (
+      projectRef.current.transcript &&
+      !confirm(
+        "重新转写将替换文字修正和文字删除选择，静音选择会保留。可通过撤销恢复。",
+      )
+    )
+      return;
+    const result = await action(() => api.transcribe(language));
+    if (result && projectRef.current) {
+      commitProject({ ...projectRef.current, transcript: result });
+      setSidebar("text");
+      setNotice(
+        `已转写 ${result.segments.length} 段文字，点击段落可试听核对。`,
+      );
+    }
+  }
   async function analyze() {
     if (!api || !project) return;
     if (
@@ -161,11 +262,13 @@ export default function App() {
       return;
     const result = await action(() => api.analyze(params));
     if (result) {
-      setProject((p) =>
-        p
-          ? { ...p, candidates: result, analyzed: true, analysisParams: params }
-          : p,
-      );
+      if (projectRef.current)
+        commitProject({
+          ...projectRef.current,
+          candidates: result,
+          analyzed: true,
+          analysisParams: params,
+        });
       setSelected(result[0]?.id ?? null);
       setDirty(true);
       setMode("source");
@@ -286,7 +389,11 @@ export default function App() {
                 />
                 <div className="export-menu">
                   {exports.map((x) => (
-                    <button key={x.kind} onClick={() => exportProject(x.kind)}>
+                    <button
+                      key={x.kind}
+                      disabled={x.kind === "srt" && !project?.transcript}
+                      onClick={() => exportProject(x.kind)}
+                    >
                       {x.kind === "jianying" ? (
                         <Scissors size={19} />
                       ) : x.kind === "mp4" ? (
@@ -308,27 +415,82 @@ export default function App() {
         </div>
       </header>
       <main>
-        <div className="workspace">
-          <Clips
-            candidates={project?.candidates ?? []}
-            selected={selected}
-            busy={busy}
-            analyzed={project?.analyzed ?? false}
-            onSelect={(c) => {
-              setSelected(c.id);
-              seek(c.startUs);
-            }}
-            onToggle={(id) =>
-              edit(
-                project!.candidates.map((c) =>
-                  c.id === id ? { ...c, remove: !c.remove } : c,
-                ),
-              )
-            }
-            onRestore={() =>
-              edit(project!.candidates.map((c) => ({ ...c, remove: false })))
-            }
-          />
+        <div className={`workspace ${sidebar === "text" ? "text-mode" : ""}`}>
+          <aside className="editing-sidebar panel">
+            <div className="sidebar-tabs" role="tablist" aria-label="剪辑方式">
+              <button
+                role="tab"
+                aria-selected={sidebar === "text"}
+                onClick={() => setSidebar("text")}
+              >
+                文字
+              </button>
+              <button
+                role="tab"
+                aria-selected={sidebar === "silence"}
+                onClick={() => setSidebar("silence")}
+              >
+                静音
+              </button>
+            </div>
+            {sidebar === "text" ? (
+              <TranscriptPanel
+                key={editorSession}
+                available={!!api}
+                transcript={project?.transcript ?? null}
+                model={speechModel}
+                ready={!!project}
+                busy={busy}
+                current={current}
+                silences={project?.candidates ?? []}
+                canUndo={historyCount > 0}
+                onUndo={undo}
+                onSeek={seekSource}
+                onDownload={() => changeModel("download")}
+                onImport={() => changeModel("import")}
+                onTranscribe={transcribe}
+                onChange={(segments: TranscriptSegment[]) => {
+                  if (project?.transcript)
+                    commitProject({
+                      ...project,
+                      transcript: { ...project.transcript, segments },
+                    });
+                }}
+                onRestoreSilence={(start, end) =>
+                  edit(
+                    project!.candidates.map((c) =>
+                      c.startUs < end && c.endUs > start
+                        ? { ...c, remove: false }
+                        : c,
+                    ),
+                  )
+                }
+              />
+            ) : (
+              <Clips
+                candidates={project?.candidates ?? []}
+                selected={selected}
+                busy={busy}
+                analyzed={project?.analyzed ?? false}
+                onSelect={(c) => {
+                  setSelected(c.id);
+                  seek(c.startUs);
+                }}
+                onToggle={(id) =>
+                  edit(
+                    project!.candidates.map((c) =>
+                      c.id === id ? { ...c, remove: !c.remove } : c,
+                    ),
+                  )
+                }
+                onRestore={() =>
+                  edit(
+                    project!.candidates.map((c) => ({ ...c, remove: false })),
+                  )
+                }
+              />
+            )}
+          </aside>
           <section className="preview-area">
             <div className="video-frame">
               {sourceUrl ? (
@@ -337,6 +499,13 @@ export default function App() {
                   ref={video}
                   src={mode === "cut" ? cutUrl : sourceUrl}
                   controls
+                  onLoadedMetadata={(event) => {
+                    if (pendingSeek.current !== null) {
+                      event.currentTarget.currentTime =
+                        pendingSeek.current / 1e6;
+                      pendingSeek.current = null;
+                    }
+                  }}
                   playsInline
                   onTimeUpdate={(e) =>
                     setCurrent(
@@ -436,18 +605,30 @@ export default function App() {
           busy={busy}
           media={project?.media ?? null}
           waveform={waveform}
-          candidates={project?.candidates ?? []}
+          candidates={project ? cutCandidates(project) : []}
           selected={selected}
           current={current}
           onSeek={seek}
           onSelect={setSelected}
-          onRestore={() =>
-            edit(
-              project!.candidates.map((c) =>
-                c.id === selected ? { ...c, remove: false } : c,
-              ),
-            )
-          }
+          onRestore={() => {
+            if (!project) return;
+            if (selected?.startsWith("text:") && project.transcript)
+              commitProject({
+                ...project,
+                transcript: {
+                  ...project.transcript,
+                  segments: project.transcript.segments.map((s) =>
+                    `text:${s.id}` === selected ? { ...s, remove: false } : s,
+                  ),
+                },
+              });
+            else
+              edit(
+                project.candidates.map((c) =>
+                  c.id === selected ? { ...c, remove: false } : c,
+                ),
+              );
+          }}
         />
       </main>
       <footer>

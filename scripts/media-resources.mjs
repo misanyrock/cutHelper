@@ -23,6 +23,18 @@ await copyFile(
   require("ffmpeg-static") + ".LICENSE",
   "media-resources/FFmpeg-GPL-LICENSE.txt",
 );
+const speechDir = `.cache/whisper-runtime/${process.platform}-${process.arch}`;
+for (const name of [
+  "whisper-cli" + (process.platform === "win32" ? ".exe" : ""),
+  "WHISPER-LICENSE.txt",
+  "runtime.json",
+]) {
+  await copyFile(`${speechDir}/${name}`, `media-resources/${name}`);
+}
+await chmod(
+  "media-resources/whisper-cli" + (process.platform === "win32" ? ".exe" : ""),
+  0o755,
+);
 await writeFile(
   "media-resources/BUILD.txt",
   `CutHelper media runtime: ${process.platform}/${process.arch}\nFFmpeg: https://ffmpeg.org\nBinaries: https://github.com/eugeneware/ffmpeg-static and https://github.com/SavageCore/node-ffprobe-installer\n`,

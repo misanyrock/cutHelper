@@ -95,15 +95,15 @@ export default function Inspector({
         <h3>分析结果</h3>
         <div>
           <span>
-            原片<strong>{formatTime(original)}</strong>
+            原片<strong>{formatTime(original, true)}</strong>
           </span>
           <span>
-            粗剪<strong>{formatTime(cut)}</strong>
+            粗剪<strong>{formatTime(cut, true)}</strong>
           </span>
           <span>
             节省
             <strong className="teal">
-              {formatTime(Math.max(0, original - cut))}
+              {formatTime(Math.max(0, original - cut), true)}
             </strong>
           </span>
         </div>

@@ -5,11 +5,17 @@ import type {
   Progress,
   ExportKind,
   Candidate,
+  ModelStatus,
+  Transcript,
 } from "./model.js";
 export interface CutHelperAPI {
   importVideo(): Promise<Loaded | null>;
   importDropped(file: File): Promise<Loaded | null>;
   analyze(params: Params): Promise<Candidate[]>;
+  modelStatus(): Promise<ModelStatus>;
+  downloadModel(): Promise<ModelStatus>;
+  importModel(): Promise<ModelStatus | null>;
+  transcribe(language: "auto" | "zh" | "en"): Promise<Transcript>;
   preview(project: Project): Promise<string>;
   saveProject(project: Project): Promise<string | null>;
   openProject(): Promise<Loaded | null>;

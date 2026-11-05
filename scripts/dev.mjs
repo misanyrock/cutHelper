@@ -2,6 +2,9 @@ import { spawn, execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 const require = createRequire(import.meta.url);
+execFileSync(process.execPath, ["scripts/speech-runtime.mjs"], {
+  stdio: "inherit",
+});
 execFileSync(
   process.execPath,
   [require.resolve("typescript/bin/tsc"), "-p", "tsconfig.electron.json"],

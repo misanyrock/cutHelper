@@ -1,6 +1,6 @@
 {
   "name": "cuthelper",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "description": "离线口播自动粗剪桌面工具",
   "author": "CutHelper",
@@ -12,10 +12,13 @@
     "build": "tsc --noEmit && vite build && tsc -p tsconfig.electron.json",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:desktop": "node --import tsx scripts/desktop-smoke.ts",
-    "pack": "npm run build && node scripts/media-resources.mjs && electron-builder --dir --publish never",
-    "dist:mac": "npm run build && node scripts/media-resources.mjs && electron-builder --mac dmg --publish never",
-    "dist:win": "npm run build && node scripts/media-resources.mjs && electron-builder --win nsis --publish never",
-    "icons": "node scripts/icons.mjs"
+    "pack": "npm run speech:prepare && npm run build && node scripts/media-resources.mjs && electron-builder --dir --publish never",
+    "dist:mac": "npm run speech:prepare && npm run build && node scripts/media-resources.mjs && electron-builder --mac dmg --publish never",
+    "dist:win": "npm run speech:prepare && npm run build && node scripts/media-resources.mjs && electron-builder --win nsis --publish never",
+    "icons": "node scripts/icons.mjs",
+    "speech:prepare": "node scripts/speech-runtime.mjs",
+    "test:speech": "node --import tsx --test tests/speech.integration.ts",
+    "test:transcript": "node --import tsx scripts/transcript-smoke.ts"
   },
   "dependencies": {
     "react": "^19.2.0",
@@ -61,7 +64,8 @@
       "category": "public.app-category.video",
       "target": "dmg",
       "identity": null,
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "minimumSystemVersion": "13.3"
     },
     "win": {
       "target": "nsis",
