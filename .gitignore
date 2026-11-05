@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-electron/
+release/
+media-resources/
+.cache/
+*.cuthelper.json
+*.mp4
+*.mov
+*.mkv
+.DS_Store
+*.log
