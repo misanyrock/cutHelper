@@ -1,27 +1,81 @@
 name: Build desktop
-on: [workflow_dispatch]
+run-name: Build desktop · ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
+    name: ${{ matrix.platform }} ${{ matrix.arch }}
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
+            platform: macOS
+            arch: arm64
             script: dist:mac
-          - os: windows-latest
+          - os: macos-15-intel
+            platform: macOS
+            arch: x64
+            script: dist:mac
+          - os: windows-2022
+            platform: Windows
+            arch: x64
             script: dist:win
     runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run ${{ matrix.script }}
-      - uses: actions/upload-artifact@v4
+      - name: Check version and architecture
+        id: metadata
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const {version} = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${version}`) {
+            throw new Error(`Tag ${process.env.GITHUB_REF_NAME} must match package.json version v${version}`);
+          }
+          if (process.arch !== process.env.EXPECTED_ARCH) {
+            throw new Error(`Runner architecture ${process.arch} does not match ${process.env.EXPECTED_ARCH}`);
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          NODE
+      - name: Install dependencies and media runtime
+        run: npm ci
+      - name: Test edit model and real media processing
+        run: npm test
+      - name: Build installer
+        run: npm run ${{ matrix.script }}
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
         with:
-          name: CutHelper-${{ matrix.os }}
+          name: CutHelper-${{ steps.metadata.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
           path: |
             release/*.dmg
             release/*.exe

@@ -116,7 +116,28 @@ npm run dist:win         # 在 Windows 上生成 NSIS 安装包
 | 桌面和窄屏界面 | 已检查；桌面 1536 × 1024、窄屏 390 × 844 |
 | Windows 运行 / 专业编辑器内导入 | 待对应环境验证 |
 
-`.github/workflows/build.yml` 提供手动触发的 Mac / Windows 构建工作流，只上传工作流构建产物，不会自动发布 Release。
+## 推送标签自动打包
+
+推送 `v*` 标签会自动运行 `.github/workflows/build.yml`，也可在 [Actions → Build desktop](https://github.com/misanyrock/cutHelper/actions/workflows/build.yml) 手动运行。
+
+每次构建先校验标签与 `package.json` 版本一致，再安装依赖、运行真实媒体测试，最后分别生成：
+
+| 平台 | 安装包 | Actions 产物名称 |
+| --- | --- | --- |
+| macOS Apple Silicon | `.dmg` | `CutHelper-版本-macOS-arm64` |
+| macOS Intel | `.dmg` | `CutHelper-版本-macOS-x64` |
+| Windows x64 | `.exe`（NSIS） | `CutHelper-版本-Windows-x64` |
+
+后续发布新版本，在干净的 `main` 分支运行：
+
+```sh
+npm version patch -m "chore: release %s"
+git push origin main --follow-tags
+```
+
+`npm version patch` 会同步更新版本号、创建提交和版本标签（例如 `v0.1.2`）。标签必须指向包含新工作流的提交，旧标签不会自动回补构建；已推送的版本标签不应改写。
+
+构建完成后，进入对应 Actions 运行页面，在 **Artifacts** 下载各平台安装包压缩包。产物保留 30 天；该工作流不自动创建 GitHub Release，也不发布自动更新，Mac 包仍为未签名构建。
 
 ## 仓库规则
 
