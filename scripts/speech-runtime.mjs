@@ -70,7 +70,10 @@ if (
   throw new Error("whisper.cpp source checksum mismatch");
 const sourceRoot = path.resolve(".cache/whisper-source");
 await mkdir(sourceRoot, { recursive: true });
-execFileSync("tar", ["-xzf", archive, "-C", sourceRoot], { stdio: "inherit" });
+execFileSync("cmake", ["-E", "tar", "xzf", archive], {
+  cwd: sourceRoot,
+  stdio: "inherit",
+});
 const source = path.join(sourceRoot, `whisper.cpp-${version}`),
   build = path.resolve(
     `.cache/whisper-build/${process.platform}-${process.arch}`,
