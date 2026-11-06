@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 contextBridge.exposeInMainWorld("cuthelper", {
-  importVideo: () => ipcRenderer.invoke("import"),
+  importMedia: () => ipcRenderer.invoke("import"),
   importDropped: (file: File) =>
     ipcRenderer.invoke("drop", webUtils.getPathForFile(file)),
   analyze: (params: unknown) => ipcRenderer.invoke("analyze", params),

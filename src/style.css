@@ -367,6 +367,30 @@ main {
   height: 100%;
   object-fit: contain;
 }
+.audio-preview {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: min(420px, 90%);
+  color: #e9eef2;
+  text-align: center;
+}
+.audio-preview .empty-icon { margin: 0; }
+.audio-preview h2 { font-size: 22px; }
+.audio-preview p {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: #a5b0bb;
+  font-size: 13px;
+}
+.audio-preview audio { width: 100%; margin-top: 8px; }
+.audio-inspector ol {
+  padding-left: 1.3rem;
+  margin: 18px 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.audio-inspector li + li { margin-top: 8px; }
 .import-empty {
   display: flex;
   flex-direction: column;
@@ -1269,6 +1293,25 @@ progress {
   padding: 7px;
   background: #fff;
 }
+.subtitle-timing {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+.subtitle-timing input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid #abd3cd;
+  border-radius: 5px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+.sentence-edit [role="alert"] { color: #a8333d; }
 .sentence-edit small {
   display: block;
   font-size: 10px;

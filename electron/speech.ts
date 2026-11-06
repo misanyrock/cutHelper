@@ -203,7 +203,7 @@ export class SpeechEngine {
           model: model.hash,
           language,
           runtime: "1.9.5",
-          format: 1,
+          format: 2,
         }),
       )
       .digest("hex");
@@ -259,7 +259,7 @@ export class SpeechEngine {
           wav,
           "-l",
           language,
-          "-oj",
+          "-ojf",
           "-of",
           output,
           "-pp",

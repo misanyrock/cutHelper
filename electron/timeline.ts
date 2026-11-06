@@ -18,8 +18,9 @@ const xml = (s: string) =>
       })[c]!,
   );
 export function fcp7(p: Project, editor: "premiere" | "resolve") {
-  const m = p.media,
-    rs = projectRanges(p),
+  const m = p.media;
+  if (m.kind === "audio") throw new Error("时间线导出需要视频素材");
+  const rs = projectRanges(p),
     rate = Math.round(m.fpsNum / m.fpsDen),
     ntsc = m.fpsDen === 1001 ? "TRUE" : "FALSE";
   const rateXml = `<rate><timebase>${rate}</timebase><ntsc>${ntsc}</ntsc></rate>`;
@@ -57,8 +58,9 @@ export function fcp7(p: Project, editor: "premiere" | "resolve") {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="5"><sequence id="cuthelper"><name>${xml(m.name)} · ${editor === "premiere" ? "Premiere" : "DaVinci Resolve"} 粗剪</name><duration>${rs.reduce((s, r) => s + frame(r.endUs, m) - frame(r.startUs, m), 0)}</duration>${rateXml}<media><video><format><samplecharacteristics>${rateXml}${videoFormat}</samplecharacteristics></format><track>${clips(false)}</track></video><audio><format><samplecharacteristics><depth>16</depth><samplerate>${m.audioRate}</samplerate></samplecharacteristics></format>${Array.from({ length: m.audioChannels }, (_, i) => `<track>${clips(true, i + 1)}</track>`).join("")}</audio></media></sequence></xmeml>`;
 }
 export function fcpxml(p: Project) {
-  const m = p.media,
-    rs = projectRanges(p),
+  const m = p.media;
+  if (m.kind === "audio") throw new Error("时间线导出需要视频素材");
+  const rs = projectRanges(p),
     time = (f: number) => `${f * m.fpsDen}/${m.fpsNum}s`;
   let offset = 0;
   const clips = rs

@@ -12,13 +12,15 @@ import {
   rm,
   copyFile,
 } from "node:fs/promises";
-import { MediaEngine, binaries } from "./media.js";
+import { MediaEngine, binaries, videoExtensions, audioExtensions } from "./media.js";
 import { fcp7, fcpxml } from "./timeline.js";
 import { SpeechEngine } from "./speech.js";
 import {serveMediaFile} from "./media-protocol.js";
 import { subtitleSrt } from "../shared/transcript.js";
 import {
   defaults,
+  mediaSchema,
+  frameUs,
   paramsSchema,
   projectSchema,
   projectRanges,
@@ -71,7 +73,7 @@ async function task<T>(stage: string, fn: (s: AbortSignal) => Promise<T>) {
 }
 function checked(raw: unknown): Project {
   const p = projectSchema.parse(raw);
-  if (!active || JSON.stringify(p.media) !== JSON.stringify(active))
+  if (!active || JSON.stringify(p.media) !== JSON.stringify(mediaSchema.parse(active)))
     throw new Error("素材状态已变化，请重新打开项目");
   if (
     p.candidates.some((c) => c.endUs > p.media.durationUs) ||
@@ -100,14 +102,14 @@ async function loaded(media: Media, signal: AbortSignal, project?: Project) {
   };
 }
 async function importFile(file: string, signal: AbortSignal) {
-  const media = await engine.import(file, signal);
+  const media = await engine.importMedia(file, signal);
   return loaded(media, signal);
 }
-async function pickVideo() {
+async function pickMedia() {
   const r = await dialog.showOpenDialog(win, {
-    title: "导入视频",
+    title: "导入视频或音频",
     properties: ["openFile"],
-    filters: [{ name: "视频", extensions: ["mp4", "mov", "mkv"] }],
+    filters: [{ name: "视频和音频", extensions: [...videoExtensions, ...audioExtensions] }],
   });
   return r.canceled ? null : r.filePaths[0];
 }
@@ -192,13 +194,13 @@ app.whenReady().then(async () => {
       return fn(...args);
     });
   handle("import", async () => {
-    const file = await pickVideo();
-    return file ? task("导入视频", (s) => importFile(file, s)) : null;
+    const file = await pickMedia();
+    return file ? task("导入素材", (s) => importFile(file, s)) : null;
   });
   handle("drop", (file: unknown) => {
     if (typeof file !== "string" || !path.isAbsolute(file))
-      throw new Error("无效视频路径");
-    return task("导入视频", (s) => importFile(file, s));
+      throw new Error("无效素材路径");
+    return task("导入素材", (s) => importFile(file, s));
   });
   const speech = new SpeechEngine(
     path.join(app.getPath("userData"), "speech"),
@@ -234,7 +236,7 @@ app.whenReady().then(async () => {
     );
   });
   handle("transcribe", (language: unknown) => {
-    if (!active) throw new Error("请先导入视频");
+    if (!active) throw new Error("请先导入视频或音频");
     if (!["auto", "zh", "en"].includes(String(language)))
       throw new Error("不支持的转写语言");
     return task("转写文字", (signal) =>
@@ -243,14 +245,17 @@ app.whenReady().then(async () => {
   });
   handle("analyze", (raw: unknown) => {
     const p = paramsSchema.parse(raw);
-    if (!active) throw new Error("请先导入视频");
-    return task("分析停顿", (s) => engine.analyze(active!, p, s));
+    const media = active;
+    if (!media || media.kind === "audio") throw new Error("请先导入视频");
+    return task("分析停顿", (s) => engine.analyze(media, p, s));
   });
   handle("preview", (raw: unknown) => {
     const p = checked(raw);
+    const media = p.media;
+    if (media.kind === "audio") throw new Error("纯音频项目仅支持原音试听");
     return task("生成预览", async (s) => {
       const file = path.join(root, `${randomUUID()}-cut.mp4`);
-      await engine.render(p.media, projectRanges(p), file, s, true);
+      await engine.render(media, projectRanges(p), file, s, true);
       tempPreviews.push(file);
       return mediaUrl(file);
     });
@@ -295,20 +300,23 @@ app.whenReady().then(async () => {
           cancelId: 1,
         });
         if (answer.response === 1) return null;
-        const file = await pickVideo();
+        const file = await pickMedia();
         if (!file) return null;
-        const media = await engine.import(file, signal);
-        if (
-          Math.abs(media.durationUs - p.media.durationUs) >
-            (1e6 * media.fpsDen) / media.fpsNum ||
-          media.width !== p.media.width ||
-          media.height !== p.media.height ||
-          Math.abs(
-            media.fpsNum / media.fpsDen - p.media.fpsNum / p.media.fpsDen,
-          ) > 0.001
-        )
+        const media = await engine.importMedia(file, signal);
+        const previous = p.media;
+        if (media.kind === "audio" || previous.kind === "audio") {
+          if (media.kind !== "audio" || previous.kind !== "audio" ||
+              media.audioRate !== previous.audioRate ||
+              Math.abs(media.durationUs - previous.durationUs) > 1000)
+            throw new Error("重新定位的素材与项目音频时长或采样率不匹配");
+        } else if (
+          Math.abs(media.durationUs - previous.durationUs) > frameUs(media) ||
+          media.width !== previous.width || media.height !== previous.height ||
+          Math.abs(media.fpsNum / media.fpsDen - previous.fpsNum / previous.fpsDen) > 0.001
+        ) {
           throw new Error("重新定位的素材与项目时长、分辨率或帧率不匹配");
-        p = { ...p, media };
+        }
+        p = projectSchema.parse({ ...p, media });
       }
       if (
         p.candidates.some((c) => c.endUs > p.media.durationUs) ||
@@ -321,11 +329,29 @@ app.whenReady().then(async () => {
   handle("export", async (raw: unknown, kind: ExportKind) => {
     const p = checked(raw);
     if (
-      !["mp4", "premiere", "resolve", "fcpxml", "jianying", "srt"].includes(
+      !["mp4", "premiere", "resolve", "fcpxml", "jianying", "srt", "source-srt"].includes(
         kind,
       )
     )
       throw new Error("未知导出类型");
+    const media = p.media;
+    if (kind === "srt" || kind === "source-srt") {
+      const source = kind === "source-srt";
+      if (!source && media.kind === "audio")
+        throw new Error("纯音频项目可导出原始字幕 SRT");
+      const subtitle = subtitleSrt(p, source ? "source" : "cut");
+      const label = source ? "原始" : "粗剪";
+      const result = await dialog.showSaveDialog(win, {
+        defaultPath: `${path.parse(media.name).name}-${label}.srt`,
+        filters: [{ name: "SRT 字幕", extensions: ["srt"] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      await task(`导出${label}字幕`, async () =>
+        atomicFile(result.filePath!, (temp) => writeFile(temp, subtitle, "utf8")),
+      );
+      return result.filePath;
+    }
+    if (media.kind === "audio") throw new Error("纯音频项目可导出原始字幕 SRT");
     const rs = projectRanges(p);
     if (!rs.length) throw new Error("没有保留片段，请先恢复至少一段");
     if (kind === "jianying") {
@@ -344,7 +370,7 @@ app.whenReady().then(async () => {
         try {
           for (let i = 0; i < rs.length; i++) {
             await engine.render(
-              p.media,
+              media,
               [rs[i]],
               path.join(temporary, `${String(i + 1).padStart(5, "0")}.mp4`),
               signal,
@@ -365,20 +391,6 @@ app.whenReady().then(async () => {
         }
       });
     }
-    if (kind === "srt") {
-      const subtitle = subtitleSrt(p);
-      const result = await dialog.showSaveDialog(win, {
-        defaultPath: `${path.parse(p.media.name).name}-粗剪.srt`,
-        filters: [{ name: "SRT 字幕", extensions: ["srt"] }],
-      });
-      if (result.canceled || !result.filePath) return null;
-      await task("导出粗剪字幕", async () =>
-        atomicFile(result.filePath!, (temp) =>
-          writeFile(temp, subtitle, "utf8"),
-        ),
-      );
-      return result.filePath;
-    }
     const ext = kind === "mp4" ? "mp4" : kind === "fcpxml" ? "fcpxml" : "xml";
     const r = await dialog.showSaveDialog(win, {
       defaultPath: `${path.parse(p.media.name).name}-粗剪.${ext}`,
@@ -387,7 +399,7 @@ app.whenReady().then(async () => {
     if (r.canceled || !r.filePath) return null;
     return task("导出", async (signal) => {
       let outputProject = p;
-      if (p.media.normalized && kind !== "mp4") {
+      if (media.normalized && kind !== "mp4") {
         const folder = path.join(
           path.dirname(r.filePath!),
           path.parse(r.filePath!).name + "-媒体",
@@ -399,7 +411,7 @@ app.whenReady().then(async () => {
       }
       await atomicFile(r.filePath!, (tmp) =>
         kind === "mp4"
-          ? engine.render(p.media, rs, tmp, signal)
+          ? engine.render(media, rs, tmp, signal)
           : writeFile(
               tmp,
               kind === "fcpxml"

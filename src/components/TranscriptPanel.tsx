@@ -21,6 +21,8 @@ type Props = {
   transcript: Transcript | null;
   model: ModelStatus | null;
   ready: boolean;
+  subtitleOnly: boolean;
+  durationUs: number;
   busy: boolean;
   current: number;
   silences: Candidate[];
@@ -41,7 +43,9 @@ export default function TranscriptPanel(p: Props) {
     [anchor, setAnchor] = useState<string | null>(null),
     [query, setQuery] = useState(""),
     [editing, setEditing] = useState<string | null>(null),
-    [draft, setDraft] = useState("");
+    [draft, setDraft] = useState(""),
+    [start, setStart] = useState(""),
+    [end, setEnd] = useState("");
   const segments = p.transcript?.segments ?? [];
   const visible = useMemo(
     () =>
@@ -51,6 +55,19 @@ export default function TranscriptPanel(p: Props) {
     [segments, query],
   );
   const chosen = new Set(selected);
+  const editIndex = segments.findIndex((s) => s.id === editing);
+  const timing = {
+    startUs: Math.round(Number(start) * 1e6),
+    endUs: Math.round(Number(end) * 1e6),
+  };
+  const previous = segments[editIndex - 1];
+  const next = segments[editIndex + 1];
+  const timingValid =
+    start !== "" && end !== "" &&
+    Number.isSafeInteger(timing.startUs) && Number.isSafeInteger(timing.endUs) &&
+    timing.startUs >= ((previous?.subtitleTiming ?? previous)?.endUs ?? 0) &&
+    timing.endUs <= ((next?.subtitleTiming ?? next)?.startUs ?? p.durationUs) &&
+    Math.round(timing.endUs / 1000) > Math.round(timing.startUs / 1000);
   const changeSelected = (remove: boolean) => {
     p.onChange(segments.map((s) => (chosen.has(s.id) ? { ...s, remove } : s)));
   };
@@ -73,16 +90,21 @@ export default function TranscriptPanel(p: Props) {
   function commitText() {
     if (!editing) return;
     const value = draft.trim();
-    if (value)
-      p.onChange(
-        segments.map((s) => (s.id === editing ? { ...s, text: value } : s)),
-      );
+    if (!value || !timingValid) return;
+    p.onChange(
+      segments.map((s) => s.id === editing ? {
+        ...s,
+        text: value,
+        subtitleTiming: timing.startUs === s.startUs && timing.endUs === s.endUs
+          ? undefined : timing,
+      } : s),
+    );
     setEditing(null);
   }
   return (
-    <section className="transcript-panel" aria-label="文字剪辑">
+    <section className="transcript-panel" aria-label={p.subtitleOnly ? "字幕校对" : "文字剪辑"}>
       <div className="transcript-heading">
-        <h2>文字剪辑</h2>
+        <h2>{p.subtitleOnly ? "字幕校对" : "文字剪辑"}</h2>
         <button
           title="撤销上一次剪辑"
           aria-label="撤销剪辑"
@@ -164,7 +186,7 @@ export default function TranscriptPanel(p: Props) {
               setSelected([]);
             }}
           />
-          <div className="sentence-batch">
+          {!p.subtitleOnly ? <div className="sentence-batch">
             <span>已选 {selected.length} 段</span>
             <button
               disabled={p.busy || !selected.length}
@@ -178,10 +200,11 @@ export default function TranscriptPanel(p: Props) {
             >
               恢复文字
             </button>
-          </div>
+          </div> : null}
           <div className="sentence-list" role="list" aria-label="转写段落">
             {visible.map((s) => {
-              const talking = p.current >= s.startUs && p.current < s.endUs;
+              const subtitle = s.subtitleTiming ?? s;
+              const talking = p.current >= subtitle.startUs && p.current < subtitle.endUs;
               const overlapping = p.silences.some(
                 (c) => c.remove && c.startUs < s.endUs && c.endUs > s.startUs,
               );
@@ -192,7 +215,7 @@ export default function TranscriptPanel(p: Props) {
                   className={`sentence ${s.remove ? "sentence-deleted" : ""} ${talking ? "speaking" : ""} ${chosen.has(s.id) ? "sentence-selected" : ""}`}
                 >
                   <div className="sentence-top">
-                    <input
+                    {!p.subtitleOnly ? <input
                       type="checkbox"
                       aria-label={`选择段落 ${s.id}`}
                       checked={chosen.has(s.id)}
@@ -201,23 +224,25 @@ export default function TranscriptPanel(p: Props) {
                         select(s.id, e.shiftKey);
                       }}
                       onChange={() => {}}
-                    />
+                    /> : null}
                     <button
                       className="sentence-time"
-                      title="定位到原片"
-                      onClick={() => p.onSeek(s.startUs)}
+                      title="定位到原素材的字幕时间"
+                      onClick={() => p.onSeek(subtitle.startUs)}
                     >
                       <Play size={11} />
-                      {formatTime(s.startUs, true)} –{" "}
-                      {formatTime(s.endUs, true)}
+                      {formatTime(subtitle.startUs, true)} –{" "}
+                      {formatTime(subtitle.endUs, true)}
                     </button>
                     <button
                       aria-label={`修正段落 ${s.id}`}
-                      title="修正文字，不改变视频时长"
+                      title="修正字幕文字和时间"
                       disabled={p.busy}
                       onClick={() => {
                         setEditing(s.id);
                         setDraft(s.text);
+                        setStart(String(subtitle.startUs / 1e6));
+                        setEnd(String(subtitle.endUs / 1e6));
                       }}
                     >
                       <Pencil size={13} />
@@ -238,20 +263,31 @@ export default function TranscriptPanel(p: Props) {
                             commitText();
                         }}
                       />
+                      <div className="subtitle-timing">
+                        <label>开始（秒）
+                          <input type="number" min="0" step="0.001" value={start}
+                            disabled={p.busy} onChange={(e) => setStart(e.target.value)} />
+                        </label>
+                        <label>结束（秒）
+                          <input type="number" min="0" step="0.001" value={end}
+                            disabled={p.busy} onChange={(e) => setEnd(e.target.value)} />
+                        </label>
+                      </div>
+                      {!timingValid ? <small role="alert">字幕时间须在素材内，且不能与相邻段落重叠。</small> : null}
                       <button
                         className="button compact"
-                        disabled={!draft.trim() || p.busy}
+                        disabled={!draft.trim() || !timingValid || p.busy}
                         onClick={commitText}
                       >
                         <Check size={13} />
                         完成修正
                       </button>
-                      <small>只修正字幕文案，不改变剪辑点</small>
+                      <small>校对字幕文字和时间，剪辑点保持原位。</small>
                     </div>
                   ) : (
                     <button
                       className="sentence-text"
-                      onClick={() => p.onSeek(s.startUs)}
+                      onClick={() => p.onSeek(subtitle.startUs)}
                     >
                       {s.text}
                     </button>
@@ -299,15 +335,15 @@ export default function TranscriptPanel(p: Props) {
             ) : null}
           </div>
           <p className="transcript-footnote">
-            勾选段落后删除 · Shift 连选 · 点击文字定位原片
+            {p.subtitleOnly ? "点击文字试听 · 点击铅笔校对字幕" : "勾选段落后删除 · Shift 连选 · 点击文字定位原片"}
           </p>
         </>
       ) : (
         <div className="transcript-empty">
           <FileText size={30} />
-          <p>读文字，决定留下什么</p>
+          <p>{p.subtitleOnly ? "给音频生成字幕" : "读文字，决定留下什么"}</p>
           <small>
-            转写后可按段落删减和修正字幕。
+            {p.subtitleOnly ? "转写后可修正字幕并导出 SRT。" : "转写后可按段落删减和修正字幕。"}
             <br />
             识别结果需要试听核对。
           </small>

@@ -57,6 +57,12 @@ test("真实离线模型：转写、缓存、删句与字幕导出", async () =>
     );
     const cached = await engine.transcribe(info, "en");
     assert.deepEqual(cached, result);
+    const audioInput = path.join(root, "speech.wav");
+    await media.ff(["-i", sample, "-vn", audioInput]);
+    const audio = await media.importMedia(audioInput);
+    const audioTranscript = await engine.transcribe(audio, "en");
+    assert.equal(audio.kind, "audio");
+    assert.match(audioTranscript.segments.map((s) => s.text).join(" "), /fellow Americans/i);
     const aborted = new AbortController();
     engine.report = (p) => {
       if (p.stage === "离线转写文字") setTimeout(() => aborted.abort(), 100);

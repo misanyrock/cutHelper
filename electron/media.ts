@@ -12,12 +12,16 @@ import {
   totalFrames,
   duration,
   type Media,
+  type AudioMedia,
+  type VideoMedia,
   type Params,
   type Progress,
   type Project,
   type Range,
 } from "../shared/model.js";
 const require = createRequire(import.meta.url);
+export const videoExtensions = ["mp4", "mov", "mkv"];
+export const audioExtensions = ["mp3", "wav", "m4a"];
 export function binaries(resources?: string) {
   return resources
     ? {
@@ -113,14 +117,17 @@ export class MediaEngine {
       onData,
     );
   }
-  async probe(file: string, signal?: AbortSignal): Promise<Media> {
-    const info = JSON.parse(
+  private async probeFile(file: string, signal?: AbortSignal) {
+    return JSON.parse(
       await this.run(
         this.bins.ffprobe,
         ["-v", "error", "-show_streams", "-show_format", "-of", "json", file],
         signal,
       ),
     );
+  }
+  async probe(file: string, signal?: AbortSignal): Promise<VideoMedia> {
+    const info = await this.probeFile(file, signal);
     const v = info.streams.find(
         (s: any) => s.codec_type === "video" && !s.disposition?.attached_pic,
       ),
@@ -159,8 +166,36 @@ export class MediaEngine {
       audioIndex: a.index,
     };
   }
+  async importMedia(file: string, signal?: AbortSignal): Promise<Media> {
+    const extension = path.extname(file).slice(1).toLowerCase();
+    if (videoExtensions.includes(extension)) return this.import(file, signal);
+    if (!audioExtensions.includes(extension))
+      throw new Error("请选择 MP4、MOV、MKV 视频，或 MP3、WAV、M4A 音频");
+    const info = await this.probeFile(file, signal);
+    const audio = info.streams.find((s: any) => s.codec_type === "audio");
+    if (!audio) throw new Error("未找到可用音轨");
+    const durationUs = Math.round(Number(info.format.duration ?? audio.duration) * 1e6);
+    const audioRate = Number(audio.sample_rate);
+    if (!Number.isSafeInteger(durationUs) || durationUs <= 0 ||
+        !Number.isFinite(audioRate) || audioRate <= 0 || !audio.channels)
+      throw new Error("音频时长或采样率无效");
+    const s = await stat(file);
+    const media: AudioMedia = {
+      kind: "audio",
+      path: file,
+      originalPath: file,
+      name: path.basename(file),
+      durationUs,
+      audioChannels: Math.min(2, audio.channels),
+      audioRate,
+      size: s.size,
+      mtimeMs: s.mtimeMs,
+      audioIndex: audio.index,
+    };
+    return media;
+  }
   async import(file: string, signal?: AbortSignal) {
-    if (![".mp4", ".mov", ".mkv"].includes(path.extname(file).toLowerCase()))
+    if (!videoExtensions.includes(path.extname(file).slice(1).toLowerCase()))
       throw new Error("请选择 MP4、MOV 或 MKV 视频");
     await mkdir(this.root, { recursive: true });
     let media = await this.probe(file, signal);
@@ -327,7 +362,7 @@ export class MediaEngine {
     return silenceCandidates(silences, m.durationUs, p.padding);
   }
   async render(
-    m: Media,
+    m: VideoMedia,
     rs: Range[],
     destination: string,
     signal?: AbortSignal,
@@ -408,6 +443,25 @@ export class MediaEngine {
     }
   }
   async sourcePreview(m: Media, signal?: AbortSignal) {
+    if (m.kind === "audio") {
+      const out = path.join(this.root, `${randomUUID()}-preview.m4a`);
+      try {
+        await this.ff(
+          [
+            "-i", m.path, "-map", `0:${m.audioIndex}`, "-vn",
+            "-c:a", "aac", "-ac", String(m.audioChannels), "-ar", "48000",
+            "-movflags", "+faststart", "-progress", "pipe:2", out,
+          ],
+          signal,
+          "准备音频试听",
+          m.durationUs / 1e6,
+        );
+        return out;
+      } catch (e) {
+        await rm(out, { force: true });
+        throw e;
+      }
+    }
     const out = path.join(this.root, `${randomUUID()}-preview.mp4`);
     await this.render(
       m,

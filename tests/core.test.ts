@@ -98,6 +98,7 @@ test("XML 区分格式，正确转义路径、帧率与音视频时长", () => {
   assert.match(f, /fcpxml version="1.9"/);
   assert.match(f, /frameDuration="1001\/30000s"/);
   assert.equal((f.match(/<asset-clip /g) ?? []).length, 2);
+  assert.ok(p.media.kind !== "audio");
   assert.equal(frame(1e6, p.media), 30);
 });
 test("项目结构校验拒绝错误参数和空区间", () => {

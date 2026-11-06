@@ -23,30 +23,38 @@ export const candidateSchema = rangeSchema.safeExtend({
   remove: z.boolean(),
 });
 export type Candidate = z.infer<typeof candidateSchema>;
-export const mediaSchema = z.object({
+const mediaInfoSchema = z.object({
   path: z.string(),
   originalPath: z.string(),
   name: z.string(),
   durationUs: z.number().int().positive(),
-  fpsNum: z.number().int().positive().max(rationalMax),
-  fpsDen: z.number().int().positive().max(rationalMax),
-  width: z.number().positive(),
-  height: z.number().positive(),
   audioChannels: z.number().int().min(1).max(2),
   audioRate: z.number().positive(),
   size: z.number().nonnegative(),
   mtimeMs: z.number(),
+  audioIndex: z.number().int().nonnegative(),
+});
+const videoMediaSchema = mediaInfoSchema.extend({
+  kind: z.literal("video").optional(),
+  fpsNum: z.number().int().positive().max(rationalMax),
+  fpsDen: z.number().int().positive().max(rationalMax),
+  width: z.number().positive(),
+  height: z.number().positive(),
   normalized: z.boolean(),
   rotation: z.number().default(0),
   videoIndex: z.number().int().nonnegative(),
-  audioIndex: z.number().int().nonnegative(),
 });
+const audioMediaSchema = mediaInfoSchema.extend({ kind: z.literal("audio") });
+export const mediaSchema = z.union([audioMediaSchema, videoMediaSchema]);
+export type VideoMedia = z.infer<typeof videoMediaSchema>;
+export type AudioMedia = z.infer<typeof audioMediaSchema>;
 export type Media = z.infer<typeof mediaSchema>;
 export const transcriptSegmentSchema = rangeSchema.safeExtend({
   id: z.string().min(1),
   text: z.string().max(20000),
   originalText: z.string().max(20000),
   remove: z.boolean().default(false),
+  subtitleTiming: rangeSchema.optional(),
 });
 export type TranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
 export const transcriptSchema = z.object({
@@ -69,6 +77,7 @@ export const projectSchema = z
   .superRefine((p, ctx) => {
     const ids = new Set<string>();
     let previousEnd = 0;
+    let previousSubtitleEnd = 0;
     for (const [index, s] of (p.transcript?.segments ?? []).entries()) {
       if (
         ids.has(s.id) ||
@@ -82,6 +91,19 @@ export const projectSchema = z
         });
       ids.add(s.id);
       previousEnd = s.endUs;
+      const timing = s.subtitleTiming ?? s;
+      if (
+        timing.startUs < previousSubtitleEnd ||
+        timing.endUs > p.media.durationUs ||
+        (s.subtitleTiming &&
+          Math.round(timing.endUs / 1000) <= Math.round(timing.startUs / 1000))
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "字幕时间超出素材、重叠或不足 1 毫秒",
+          path: ["transcript", "segments", index, "subtitleTiming"],
+        });
+      previousSubtitleEnd = timing.endUs;
     }
   })
   .transform((p) => ({ ...p, version: 2 as const }));
@@ -93,7 +115,7 @@ export type Loaded = {
 };
 export type Progress = { stage: string; percent: number | null };
 export type ExportKind =
-  "mp4" | "premiere" | "resolve" | "fcpxml" | "jianying" | "srt";
+  "mp4" | "premiere" | "resolve" | "fcpxml" | "jianying" | "srt" | "source-srt";
 export type ModelStatus = {
   ready: boolean;
   runtimeReady: boolean;
@@ -102,6 +124,7 @@ export type ModelStatus = {
   hash: string | null;
 };
 export function cutCandidates(p: Project): Candidate[] {
+  if (p.media.kind === "audio") return [];
   return [
     ...p.candidates,
     ...(p.transcript?.segments
@@ -110,14 +133,16 @@ export function cutCandidates(p: Project): Candidate[] {
   ];
 }
 export const projectRanges = (p: Project) =>
-  keepRanges(p.media, cutCandidates(p));
-export const frameUs = (m: Pick<Media, "fpsNum" | "fpsDen">) =>
+  p.media.kind === "audio"
+    ? [{ startUs: 0, endUs: p.media.durationUs }]
+    : keepRanges(p.media, cutCandidates(p));
+export const frameUs = (m: Pick<VideoMedia, "fpsNum" | "fpsDen">) =>
   (1e6 * m.fpsDen) / m.fpsNum;
-export const totalFrames = (m: Media) =>
+export const totalFrames = (m: VideoMedia) =>
   Math.max(1, Math.round(m.durationUs / frameUs(m)));
-export const frame = (us: number, m: Media) =>
+export const frame = (us: number, m: VideoMedia) =>
   Math.min(totalFrames(m), Math.max(0, Math.round(us / frameUs(m))));
-export function keepRanges(m: Media, cs: Candidate[]): Range[] {
+export function keepRanges(m: VideoMedia, cs: Candidate[]): Range[] {
   const removed = cs
     .filter((c) => c.remove)
     .map((c) => ({ a: frame(c.startUs, m), b: frame(c.endUs, m) }))

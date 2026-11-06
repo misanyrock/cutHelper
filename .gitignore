@@ -26,6 +26,8 @@ node_modules/
 *.mov
 *.mkv
 *.wav
+*.mp3
+*.m4a
 *.aiff
 *.srt
 *.bin

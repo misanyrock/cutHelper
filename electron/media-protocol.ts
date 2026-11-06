@@ -1,13 +1,15 @@
 import {createReadStream} from 'node:fs';
 import {stat} from 'node:fs/promises';
 import {Readable} from 'node:stream';
+import {extname} from 'node:path';
 
 // Chromium needs explicit HTTP byte-range semantics for seeking through a
 // custom streaming scheme. net.fetch(file:) does not provide them reliably.
 export async function serveMediaFile(file:string,request:Request):Promise<Response>{
   if(!['GET','HEAD'].includes(request.method))return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
   let size:number;try{size=(await stat(file)).size;}catch{return new Response(null,{status:404});}
-  const headers=new Headers({'Content-Type':'video/mp4','Accept-Ranges':'bytes','Cache-Control':'no-store'});
+  const contentType=extname(file).toLowerCase()==='.m4a'?'audio/mp4':'video/mp4';
+  const headers=new Headers({'Content-Type':contentType,'Accept-Ranges':'bytes','Cache-Control':'no-store'});
   let start=0,end=size-1,status=200;
   const range=request.headers.get('range');
   if(range){

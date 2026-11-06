@@ -87,7 +87,7 @@ try {
       filePaths: [input],
     });
   }, input);
-  await page.getByRole("button", { name: "导入视频", exact: true }).click();
+  await page.getByRole("button", { name: "导入素材", exact: true }).click();
   await page.waitForTimeout(2500);
   if (await page.locator(".toast.error").count())
     throw new Error(await page.locator(".toast.error").innerText());

@@ -9,7 +9,7 @@ import type {
   Transcript,
 } from "./model.js";
 export interface CutHelperAPI {
-  importVideo(): Promise<Loaded | null>;
+  importMedia(): Promise<Loaded | null>;
   importDropped(file: File): Promise<Loaded | null>;
   analyze(params: Params): Promise<Candidate[]>;
   modelStatus(): Promise<ModelStatus>;

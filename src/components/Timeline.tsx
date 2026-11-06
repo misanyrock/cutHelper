@@ -25,6 +25,7 @@ export default function Timeline({
   const [zoom, setZoom] = useState(1),
     canvas = useRef<HTMLCanvasElement>(null);
   const duration = media?.durationUs ?? 0;
+  const audioOnly = media?.kind === "audio";
   useEffect(() => {
     const el = canvas.current;
     if (!el) return;
@@ -60,11 +61,15 @@ export default function Timeline({
         <h2>波形时间轴</h2>
         <span className="legend">
           <i />
-          保留（有语音）
-          <i className="removed" />
-          删除（静音）
-          <i className="text-removed" />
-          文字删除
+          {audioOnly ? "原始音频" : (
+            <>
+              保留（有语音）
+              <i className="removed" />
+              删除（静音）
+              <i className="text-removed" />
+              文字删除
+            </>
+          )}
         </span>
         <div className="zoom">
           <span>缩放</span>
@@ -95,14 +100,14 @@ export default function Timeline({
         <div className="timeline-inner" style={{ width: `${zoom * 100}%` }}>
           <div className="ruler">
             {Array.from({ length: 13 }, (_, i) => (
-              <span key={i}>{formatTime((duration * i) / 12)}</span>
+              <span key={i}>{formatTime((duration * i) / 12, duration > 0 && duration < 12e6)}</span>
             ))}
           </div>
           <div
             className="wave"
             role="slider"
             tabIndex={0}
-            aria-label="定位原片"
+            aria-label={audioOnly ? "定位音频" : "定位原片"}
             aria-valuemin={0}
             aria-valuemax={duration / 1e6}
             aria-valuenow={current / 1e6}
@@ -147,7 +152,7 @@ export default function Timeline({
                 }}
               />
             ) : (
-              <div className="wave-empty">导入视频后，波形将在这里显示</div>
+              <div className="wave-empty">导入素材后，波形将在这里显示</div>
             )}
           </div>
         </div>
@@ -156,16 +161,17 @@ export default function Timeline({
         <span>
           {item
             ? `当前选中： ${formatTime(item.startUs, true)} – ${formatTime(item.endUs, true)} （时长 ${((item.endUs - item.startUs) / 1e6).toFixed(2)} 秒）`
+            : audioOnly ? "点击波形定位，使用方向键前后移动 1 秒"
             : "点击波形定位，选择静音片段检查剪辑点"}
         </span>
-        <button
+        {!audioOnly ? <button
           className="button compact"
           disabled={busy || !item?.remove}
           onClick={onRestore}
         >
           <RotateCcw size={16} />
           恢复此段
-        </button>
+        </button> : null}
       </div>
     </section>
   );

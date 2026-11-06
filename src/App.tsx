@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from "react";
 import {
   FolderOpen,
   Upload,
   Download,
-  Play,
   Monitor,
   Save,
   Film,
@@ -13,11 +12,14 @@ import {
   Check,
   Scissors,
   FileVideo,
+  FileText,
+  Headphones,
   RefreshCw,
 } from "lucide-react";
 import {
   defaults,
   duration,
+  formatTime,
   projectRanges,
   cutCandidates,
   type ModelStatus,
@@ -35,6 +37,7 @@ import Inspector from "./components/Inspector";
 import Clips from "./components/Clips";
 import TranscriptPanel from "./components/TranscriptPanel";
 const exports: { kind: ExportKind; label: string; detail: string }[] = [
+  { kind: "source-srt", label: "原始字幕 SRT", detail: "按原素材时间导出全部文字" },
   { kind: "srt", label: "粗剪字幕 SRT", detail: "字幕时间与粗剪视频同步" },
   { kind: "mp4", label: "视频 MP4", detail: "可直接播放的粗剪成片" },
   {
@@ -77,9 +80,13 @@ export default function App() {
     [editorSession, setEditorSession] = useState(0);
   const history = useRef<Project[]>([]),
     pendingSeek = useRef<number | null>(null);
-  const video = useRef<HTMLVideoElement>(null),
+  const player = useRef<HTMLMediaElement | null>(null),
     projectRef = useRef(project);
+  const connectPlayer = useCallback((element: HTMLMediaElement | null) => {
+    player.current = element;
+  }, []);
   projectRef.current = project;
+  const audioOnly = project?.media.kind === "audio";
   const params = project?.params ?? defaults,
     revision = JSON.stringify(
       project
@@ -154,7 +161,7 @@ export default function App() {
   }
   function accept(
     result:
-      Awaited<ReturnType<NonNullable<typeof api>["importVideo"]>> | undefined,
+      Awaited<ReturnType<NonNullable<typeof api>["importMedia"]>> | undefined,
   ) {
     if (!result) return;
     setProject(result.project);
@@ -164,7 +171,9 @@ export default function App() {
     setWaveform(result.waveform);
     setSourceUrl(result.sourceUrl);
     setCutUrl("");
+    pendingSeek.current = null;
     setMode("source");
+    if (result.project.media.kind === "audio") setSidebar("text");
     setSelected(null);
     setCurrent(0);
     setDirty(false);
@@ -172,22 +181,22 @@ export default function App() {
   function canReplace() {
     return !dirty || confirm("当前项目有未保存的修改，继续将丢弃这些修改。");
   }
-  async function importVideo() {
+  async function importMedia() {
     if (!api || !canReplace()) return;
-    accept(await action(() => api.importVideo()));
+    accept(await action(() => api.importMedia()));
   }
   async function openProject() {
     if (!api || !canReplace()) return;
     accept(await action(() => api.openProject()));
   }
-  function commitProject(next: Project) {
+  function commitProject(next: Project, affectsCut = true) {
     if (!projectRef.current) return;
     history.current.push(projectRef.current);
     if (history.current.length > 30) history.current.shift();
     setHistoryCount(history.current.length);
     setProject(next);
     setDirty(true);
-    if (mode === "cut") {
+    if (affectsCut && mode === "cut") {
       setMode("source");
       setNotice("剪辑已更新，点击“粗剪”重新生成预览。");
     }
@@ -211,9 +220,10 @@ export default function App() {
   }
   function seek(us: number) {
     setCurrent(us);
-    if (video.current)
-      video.current.currentTime =
-        (mode === "cut" ? sourceToCut(us, ranges) : us) / 1e6;
+    const target = mode === "cut" ? sourceToCut(us, ranges) : us;
+    if (player.current && player.current.readyState >= 1)
+      player.current.currentTime = target / 1e6;
+    else pendingSeek.current = target;
   }
   function seekSource(us: number) {
     setCurrent(us);
@@ -222,8 +232,8 @@ export default function App() {
       setMode("source");
       return;
     }
-    if (video.current && video.current.readyState >= 1) {
-      video.current.currentTime = us / 1e6;
+    if (player.current && player.current.readyState >= 1) {
+      player.current.currentTime = us / 1e6;
       pendingSeek.current = null;
     }
   }
@@ -303,6 +313,22 @@ export default function App() {
     const result = await action(() => api.exportProject(project, kind));
     if (result) setNotice(`导出完成：${result}`);
   }
+  const playbackProps = {
+    ref: connectPlayer,
+    src: mode === "cut" ? cutUrl : sourceUrl,
+    controls: true,
+    onLoadedMetadata: (event: SyntheticEvent<HTMLMediaElement>) => {
+      if (pendingSeek.current !== null) {
+        event.currentTarget.currentTime = pendingSeek.current / 1e6;
+        pendingSeek.current = null;
+      }
+    },
+    onTimeUpdate: (event: SyntheticEvent<HTMLMediaElement>) => {
+      const position = event.currentTarget.currentTime * 1e6;
+      setCurrent(mode === "cut" ? cutToSource(position, ranges) : position);
+    },
+    onError: () => setError("无法播放预览，请重新导入素材或生成预览"),
+  };
   return (
     <div
       className={`app ${dragging ? "dragging" : ""}`}
@@ -320,7 +346,7 @@ export default function App() {
         if (!api || busy || !canReplace()) return;
         const files = e.dataTransfer.files;
         if (files.length !== 1) {
-          setError("一次只能导入一个视频");
+          setError("一次只能导入一个素材");
           return;
         }
         accept(await action(() => api.importDropped(files[0])));
@@ -336,7 +362,7 @@ export default function App() {
           <h1>CutHelper</h1>
         </div>
         <div className="project-name">
-          <Film size={20} />
+          {audioOnly ? <Headphones size={20} /> : <Film size={20} />}
           <span>
             {project?.media.name ?? "离线口播粗剪"}
             {dirty ? " · 未保存" : ""}
@@ -364,16 +390,16 @@ export default function App() {
           <button
             className="button"
             disabled={busy || !api}
-            onClick={importVideo}
+            onClick={importMedia}
           >
             <FolderOpen size={20} />
-            导入视频
+            导入素材
           </button>
           <div className="export-wrap">
             <button
               className="button primary"
               aria-expanded={menu}
-              disabled={busy || !project || !cut}
+              disabled={busy || !project || (!project.transcript && (audioOnly || !cut))}
               onClick={() => setMenu((v) => !v)}
             >
               <Upload size={19} />
@@ -388,13 +414,16 @@ export default function App() {
                   onClick={() => setMenu(false)}
                 />
                 <div className="export-menu">
-                  {exports.map((x) => (
+                  {exports.filter((x) => !audioOnly || x.kind === "source-srt").map((x) => (
                     <button
                       key={x.kind}
-                      disabled={x.kind === "srt" && !project?.transcript}
+                      disabled={x.kind === "source-srt" ? !project?.transcript :
+                        !cut || (x.kind === "srt" && !project?.transcript)}
                       onClick={() => exportProject(x.kind)}
                     >
-                      {x.kind === "jianying" ? (
+                      {x.kind === "source-srt" || x.kind === "srt" ? (
+                        <FileText size={19} />
+                      ) : x.kind === "jianying" ? (
                         <Scissors size={19} />
                       ) : x.kind === "mp4" ? (
                         <FileVideo size={19} />
@@ -417,7 +446,7 @@ export default function App() {
       <main>
         <div className={`workspace ${sidebar === "text" ? "text-mode" : ""}`}>
           <aside className="editing-sidebar panel">
-            <div className="sidebar-tabs" role="tablist" aria-label="剪辑方式">
+            {!audioOnly ? <div className="sidebar-tabs" role="tablist" aria-label="剪辑方式">
               <button
                 role="tab"
                 aria-selected={sidebar === "text"}
@@ -432,14 +461,16 @@ export default function App() {
               >
                 静音
               </button>
-            </div>
-            {sidebar === "text" ? (
+            </div> : null}
+            {audioOnly || sidebar === "text" ? (
               <TranscriptPanel
                 key={editorSession}
                 available={!!api}
                 transcript={project?.transcript ?? null}
                 model={speechModel}
                 ready={!!project}
+                subtitleOnly={audioOnly}
+                durationUs={project?.media.durationUs ?? 0}
                 busy={busy}
                 current={current}
                 silences={project?.candidates ?? []}
@@ -450,11 +481,13 @@ export default function App() {
                 onImport={() => changeModel("import")}
                 onTranscribe={transcribe}
                 onChange={(segments: TranscriptSegment[]) => {
-                  if (project?.transcript)
-                    commitProject({
-                      ...project,
-                      transcript: { ...project.transcript, segments },
-                    });
+                  if (!project?.transcript) return;
+                  const transcript = project.transcript;
+                  const affectsCut = segments.some((s, index) => s.remove !== transcript.segments[index]?.remove);
+                  commitProject({
+                    ...project,
+                    transcript: { ...transcript, segments },
+                  }, affectsCut);
                 }}
                 onRestoreSilence={(start, end) =>
                   edit(
@@ -493,56 +526,40 @@ export default function App() {
           </aside>
           <section className="preview-area">
             <div className="video-frame">
-              {sourceUrl ? (
-                <video
-                  key={mode === "cut" ? cutUrl : sourceUrl}
-                  ref={video}
-                  src={mode === "cut" ? cutUrl : sourceUrl}
-                  controls
-                  onLoadedMetadata={(event) => {
-                    if (pendingSeek.current !== null) {
-                      event.currentTarget.currentTime =
-                        pendingSeek.current / 1e6;
-                      pendingSeek.current = null;
-                    }
-                  }}
-                  playsInline
-                  onTimeUpdate={(e) =>
-                    setCurrent(
-                      mode === "cut"
-                        ? cutToSource(e.currentTarget.currentTime * 1e6, ranges)
-                        : e.currentTarget.currentTime * 1e6,
-                    )
-                  }
-                  onError={() =>
-                    setError("预览无法播放，请重新导入视频或生成预览")
-                  }
-                />
+              {sourceUrl ? audioOnly ? (
+                <div className="audio-preview">
+                  <Headphones className="empty-icon" size={40} strokeWidth={1.4} />
+                  <h2>音频试听</h2>
+                  <p>{project.media.name}</p>
+                  <audio key={sourceUrl} {...playbackProps} aria-label="原始音频" />
+                </div>
+              ) : (
+                <video key={playbackProps.src} {...playbackProps} playsInline />
               ) : (
                 <div className="import-empty">
                   <span className="empty-icon">
                     <FileVideo size={40} strokeWidth={1.4} />
                   </span>
                   <h2>把停顿留给我们</h2>
-                  <p>拖入一段口播视频，开始自动粗剪</p>
+                  <p>拖入视频或音频，开始粗剪或生成字幕</p>
                   <button
                     className="button primary"
-                    onClick={importVideo}
+                    onClick={importMedia}
                     disabled={!api || busy}
                   >
                     <FolderOpen size={18} />
-                    选择视频
+                    选择素材
                   </button>
-                  <small>MP4、MOV、MKV · 完全在本机处理</small>
+                  <small>MP4、MOV、MKV、MP3、WAV、M4A · 本机处理</small>
                   {!api ? (
                     <p className="browser-note">
-                      请在 CutHelper 桌面应用中导入本地视频
+                      请在 CutHelper 桌面应用中导入本地素材
                     </p>
                   ) : null}
                 </div>
               )}
             </div>
-            <div className="preview-toolbar">
+            {!audioOnly ? <div className="preview-toolbar">
               <div className="mode-toggle">
                 <button
                   className={mode === "source" ? "active" : ""}
@@ -578,8 +595,8 @@ export default function App() {
                   <RefreshCw size={16} />
                 </button>
               ) : null}
-            </div>
-            {project?.media.normalized ? (
+            </div> : null}
+            {project && project.media.kind !== "audio" && project.media.normalized ? (
               <p className="normalization-note">
                 已生成{" "}
                 {(project.media.fpsNum / project.media.fpsDen).toFixed(2)} fps
@@ -587,7 +604,20 @@ export default function App() {
               </p>
             ) : null}
           </section>
-          <Inspector
+          {audioOnly ? (
+            <aside className="inspector panel audio-inspector">
+              <h2>音频字幕</h2>
+              <ol>
+                <li>选择语言，转写本地音频</li>
+                <li>点击段落试听，校对文字和时间</li>
+                <li>导出原始字幕 SRT</li>
+              </ol>
+              <div className="results">
+                <h3>音频时长</h3>
+                <strong>{formatTime(project.media.durationUs, true)}</strong>
+              </div>
+            </aside>
+          ) : <Inspector
             params={params}
             onChange={(p) => {
               setProject((v) => (v ? { ...v, params: p } : v));
@@ -599,7 +629,7 @@ export default function App() {
             original={project?.media.durationUs ?? 0}
             cut={cut}
             stale={staleParams}
-          />
+          />}
         </div>
         <Timeline
           busy={busy}
@@ -640,7 +670,9 @@ export default function App() {
         </span>
         <span>
           {project
-            ? `${project.media.width} × ${project.media.height} · ${(project.media.fpsNum / project.media.fpsDen).toFixed(2)} fps`
+            ? project.media.kind === "audio"
+              ? `${project.media.audioRate / 1000} kHz · ${project.media.audioChannels === 1 ? "单声道" : "双声道试听"}`
+              : `${project.media.width} × ${project.media.height} · ${(project.media.fpsNum / project.media.fpsDen).toFixed(2)} fps`
             : "准备就绪"}
         </span>
       </footer>
@@ -684,8 +716,8 @@ export default function App() {
       {dragging ? (
         <div className="drop-overlay">
           <Upload size={40} />
-          <h2>松开以导入视频</h2>
-          <p>一次处理一个视频，素材始终留在本机</p>
+          <h2>松开以导入素材</h2>
+          <p>一次处理一个视频或音频，素材始终留在本机</p>
         </div>
       ) : null}
     </div>

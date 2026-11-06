@@ -109,6 +109,37 @@ test("SRT 使用粗剪时间，跳过删除句，保留修正文本且不会产�
   }));
   assert.throws(() => subtitleSrt(p), /没有可导出/);
 });
+test("原始字幕保留所有文字，校对时间不会移动视频剪辑点", () => {
+  const p = makeProject();
+  const before = projectRanges(p);
+  p.transcript!.segments[2].subtitleTiming = { startUs: 4_250_000, endUs: 6_500_000 };
+  assert.ok(projectSchema.safeParse(p).success);
+  assert.deepEqual(projectRanges(p), before);
+  assert.match(subtitleSrt(p, "source"), /00:00:02,000 --> 00:00:04,000\n删除这句。/);
+  assert.match(subtitleSrt(p, "source"), /00:00:04,250 --> 00:00:06,500\n修正后的句子。/);
+  assert.match(subtitleSrt(p), /00:00:01,750 --> 00:00:04,000\n修正后的句子。/);
+  p.transcript!.segments[2].subtitleTiming.startUs = 3_900_000;
+  assert.ok(!projectSchema.safeParse(p).success);
+  p.transcript!.segments[2].subtitleTiming = undefined;
+  for (const segment of p.transcript!.segments) segment.remove = true;
+  assert.match(subtitleSrt(p, "source"), /修正后的句子。/);
+});
+test("断句使用已识别的词元时间，并在缺少时间时保留完整文本", () => {
+  const tokens = [
+    { text: "[_BEG_]" },
+    { text: "你好。", offsets: { from: 0, to: 600 } },
+    { text: "这是第一段", offsets: { from: 620, to: 1300 } },
+    { text: "再说一段", offsets: { from: 1900, to: 2700 } },
+  ];
+  const entry = { offsets: { from: 0, to: 2800 }, text: "你好。这是第一段再说一段", tokens };
+  assert.deepEqual(
+    parseWhisperOutput({ transcription: [entry] }, 3e6)
+      .map(({ text, startUs, endUs }) => [text, startUs, endUs]),
+    [["你好。", 0, 600000], ["这是第一段", 620000, 1300000], ["再说一段", 1900000, 2800000]],
+  );
+  delete tokens[2].offsets;
+  assert.equal(parseWhisperOutput({ transcription: [entry] }, 3e6)[0].text, entry.text);
+});
 test("Whisper 时间戳毫秒转微秒，裁切尾部、去除空段和噪声标记", () => {
   const result = parseWhisperOutput(
     {

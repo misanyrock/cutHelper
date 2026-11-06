@@ -11,6 +11,27 @@ import {
   frameUs,
   projectSchema,
 } from "../shared/model.js";
+test("MP3、WAV 和 M4A 可在中文路径导入并生成音频试听文件", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cuthelper-audio-"));
+  const engine = new MediaEngine(root);
+  try {
+    for (const ext of ["mp3", "wav", "m4a"]) {
+      const file = path.join(root, `字幕 素材.${ext}`);
+      await engine.ff(["-f", "lavfi", "-i", "sine=duration=1", file]);
+      const media = await engine.importMedia(file);
+      assert.equal(media.kind, "audio");
+      assert.ok(Math.abs(media.durationUs - 1e6) < 100_000);
+      assert.ok((await engine.waveform(media)).some((v) => v > 0));
+      const preview = await engine.sourcePreview(media);
+      assert.equal(path.extname(preview), ".m4a");
+      const decoded = await engine.importMedia(preview);
+      assert.ok(Math.abs(decoded.durationUs - media.durationUs) < 100_000);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("真实 FFmpeg：中文路径导入、静音检测、音画同步导出、29.97 fps、VFR、取消与失败清理", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "cuthelper-test-"));
   const engine = new MediaEngine(
@@ -95,6 +116,7 @@ test("真实 FFmpeg：中文路径导入、静音检测、音画同步导出、2
         analyzed: true,
         analysisParams: defaults,
       });
+      assert.ok(p.media.kind !== "audio");
       assert.equal(p.media.fpsNum, 51234569);
       const retained = keepRanges(high, cs),
         target = path.join(root, "large-fps-preview.mp4");
